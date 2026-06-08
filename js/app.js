@@ -72,15 +72,42 @@ window.nav=nav; window.markDone=markDone; window.deleteSystem=deleteSystem; wind
 render();
 
 
+// v0.3: floating add button, edit customer, real maintenance calendar
 const fabAdd = document.getElementById('fabAdd');
-function updateFab(){
-  if(!fabAdd) return;
-  fabAdd.style.display = ['dashboard','customers','agenda'].includes(route.name) ? 'block' : 'none';
-  fabAdd.onclick = ()=>nav('new',{back:route.name});
-}
-const _renderOriginal = render;
+let calendarMonth = new Date();
+let selectedAgendaDate = toDateKey(new Date());
+
+function toDateKey(d){const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const day=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}`;}
+function monthLabel(date){return date.toLocaleDateString('nl-NL',{month:'long',year:'numeric'});}
+function escapeAttr(value=''){return String(value).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');}
+function whatsappLink(c){const phone=(c.phone||'').replace(/\D/g,'').replace(/^0/,'31'); const text=encodeURIComponent('Hallo '+c.name+', het is weer tijd voor onderhoud. Zullen we een afspraak plannen?'); return `https://wa.me/${phone}?text=${text}`;}
+function updateFab(){if(!fabAdd)return; const show=['dashboard','customers','agenda'].includes(route.name); fabAdd.style.display=show?'block':'none'; fabAdd.onclick=()=>nav('new',{back:route.name});}
+
+const renderBaseV03 = render;
 render = function(){
-  _renderOriginal();
-  updateFab();
+  if(route.name==='editCustomer'){
+    document.querySelectorAll('.bottom-nav button').forEach(b=>b.classList.remove('active'));
+    backBtn.hidden=false; backBtn.onclick=()=>nav('detail',{customerId:route.customerId,back:'customers'}); pageTitle.textContent='Klant bewerken'; editCustomer(route.customerId); updateFab(); return;
+  }
+  renderBaseV03(); updateFab();
+};
+
+function agenda(){
+  const selectedList = sortedSystems().filter(s=>nextDate(s)===selectedAgendaDate);
+  app.innerHTML=`<section class="screen"><article class="card calendar-card"><div class="calendar-head"><button class="smallbtn" onclick="changeMonth(-1)">‹</button><strong>${monthLabel(calendarMonth)}</strong><button class="smallbtn" onclick="changeMonth(1)">›</button></div>${calendarGrid()}</article><div class="list-header"><h2>${fmt(selectedAgendaDate)}</h2><button class="link" onclick="selectedAgendaDate=toDateKey(new Date()); calendarMonth=new Date(); render();">Vandaag</button></div>${selectedList.map(agendaDayCard).join('')||'<div class="card empty">Geen onderhoud op deze dag.</div>'}<h2>Volgende onderhouden</h2>${sortedSystems().slice(0,5).map(s=>systemCard(s,true)).join('')||'<div class="card empty">Geen onderhoud gepland.</div>'}</section>`;
 }
-updateFab();
+function calendarGrid(){
+  const y=calendarMonth.getFullYear(), m=calendarMonth.getMonth(); const first=new Date(y,m,1); const daysInMonth=new Date(y,m+1,0).getDate(); const offset=(first.getDay()+6)%7; const weekdays=['Ma','Di','Wo','Do','Vr','Za','Zo']; const dateSet=new Set(state.systems.map(s=>nextDate(s))); let cells='';
+  for(let i=0;i<offset;i++) cells += `<button class="calendar-day blank" disabled></button>`;
+  for(let day=1; day<=daysInMonth; day++){const key=toDateKey(new Date(y,m,day)); const has=dateSet.has(key); const active=selectedAgendaDate===key; const today=toDateKey(new Date())===key; cells += `<button class="calendar-day ${has?'has-event':''} ${active?'active':''} ${today?'today':''}" onclick="selectAgendaDate('${key}')"><span>${day}</span>${has?'<i></i>':''}</button>`;}
+  return `<div class="calendar-weekdays">${weekdays.map(w=>`<span>${w}</span>`).join('')}</div><div class="calendar-grid">${cells}</div>`;
+}
+function agendaDayCard(s){const c=customer(s.customerId)||{}; return `<article class="card compact"><div class="row"><div class="avatar">${s.type==='warmtepomp'?'♨️':'❄️'}</div><div><p class="title">${c.name}</p><p class="muted">${s.brand} ${s.model}</p><p class="muted">📍 ${c.address}</p></div></div><div class="actions"><a class="secondary" href="tel:${c.phone}">📞 Bel</a><a class="secondary whatsapp" href="${whatsappLink(c)}">💬 WhatsApp</a></div><button class="smallbtn wide" onclick="nav('detail',{customerId:'${s.customerId}',back:'agenda'})">Open klant</button></article>`;}
+function changeMonth(dir){calendarMonth=new Date(calendarMonth.getFullYear(),calendarMonth.getMonth()+dir,1); selectedAgendaDate=toDateKey(new Date(calendarMonth.getFullYear(),calendarMonth.getMonth(),1)); render();}
+function selectAgendaDate(key){selectedAgendaDate=key; render();}
+
+function detail(id){const c=customer(id); if(!c)return nav('customers'); const systems=systemsForCustomer(id); app.innerHTML=`<section class="screen"><article class="card"><div class="row"><div class="avatar">❄️</div><div style="flex:1"><div class="row between"><p class="title">${c.name} <span class="pill">Actief</span></p><button class="edit-btn" onclick="event.stopPropagation(); nav('editCustomer',{customerId:'${c.id}',back:'detail'})">✏️</button></div><p class="muted">${c.address}</p><p class="muted">☎ ${c.phone}</p><p class="muted">✉ ${c.email}</p></div></div><div class="actions"><a class="secondary" href="tel:${c.phone}">📞 Bel klant</a><a class="secondary whatsapp" href="${whatsappLink(c)}">💬 WhatsApp</a></div></article><h2>Systemen</h2>${systems.map(s=>`<article class="card"><div class="row between"><p class="title">${s.type==='warmtepomp'?'Warmtepomp':'Airco'} / ${s.brand} ${s.model}</p>${dueLabel(s)}</div><div class="detail-grid" style="margin-top:12px"><div class="mini"><span>Serienummer</span><b>${s.serial||'-'}</b></div><div class="mini"><span>Installatie</span><b>${fmt(s.installedAt)}</b></div><div class="mini"><span>Interval</span><b>Elke ${s.interval} maanden</b></div><div class="mini"><span>Volgend onderhoud</span><b>${fmt(nextDate(s))}</b></div></div><div class="notice" style="margin-top:12px">Reminder naar bedrijf: ${s.reminderCompany?'aan':'uit'} · Reminder naar klant: ${s.reminderCustomer?'aan':'uit'}</div><div class="actions"><button class="secondary" onclick="markDone('${s.id}')">✅ Onderhoud uitgevoerd</button><button class="danger" onclick="deleteSystem('${s.id}')">🗑 Verwijder</button></div></article>`).join('')||'<div class="card empty">Nog geen systemen bij deze klant.</div>'}<button class="primary" onclick="nav('new',{customerId:'${c.id}',back:'detail'})">+ Systeem toevoegen bij deze klant</button></section>`;}
+function editCustomer(id){const c=customer(id); if(!c)return nav('customers'); app.innerHTML=`<section class="screen"><form class="form" id="editCustomerForm"><article class="card form"><h2>Klant bewerken</h2><div class="field"><label>Klantnaam</label><input name="name" value="${escapeAttr(c.name)}" required></div><div class="field"><label>Adres</label><input name="address" value="${escapeAttr(c.address)}"></div><div class="two"><div class="field"><label>Telefoon</label><input name="phone" value="${escapeAttr(c.phone)}"></div><div class="field"><label>E-mail</label><input name="email" value="${escapeAttr(c.email)}"></div></div></article><button class="primary" type="submit">Klant opslaan</button></form></section>`; const f=document.getElementById('editCustomerForm'); f.onsubmit=(e)=>{e.preventDefault(); c.name=f.name.value.trim()||c.name; c.address=f.address.value.trim(); c.phone=f.phone.value.trim(); c.email=f.email.value.trim(); save(); nav('detail',{customerId:c.id,back:'customers'});};}
+
+window.changeMonth=changeMonth; window.selectAgendaDate=selectAgendaDate;
+render();

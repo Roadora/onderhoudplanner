@@ -537,7 +537,7 @@ function editCustomer(id){
         <h2>Geplaatste systemen</h2>
         ${systems.map(s=>`<div class="edit-system-card"><div class="row between"><div><p class="title">${s.type==='warmtepomp'?'♨️ Warmtepomp':'❄️ Airco'}</p><p class="muted">${s.brand} ${s.model}</p><p class="muted">Volgend onderhoud: ${fmt(nextDate(s))}</p></div><button type="button" class="edit-btn" onclick="nav('editSystem',{systemId:'${s.id}',back:'editCustomer'})">✏️</button></div></div>`).join('') || '<p class="muted">Nog geen systemen.</p>'}
       </article>
-      <button class="primary" type="submit">Klant opslaan</button>
+      <button class="primary" type="submit">Klant opslaan</button><button class="danger" type="button" onclick="deleteCustomer(\'${c.id}\')">🗑 Klant verwijderen</button>
     </form>
   </section>`;
 
@@ -831,5 +831,16 @@ function resetDemo(){
   nav('dashboard');
 }
 
-Object.assign(window,{nav,changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,resetDemo,deleteAppointment,deleteGenericAppointment});
+
+function deleteCustomer(id){
+  if(!confirm('Klant en alle gekoppelde systemen en afspraken verwijderen?')) return;
+  state.systems = state.systems.filter(s=>s.customerId!==id);
+  state.appointments = appointments().filter(a=>a.customerId!==id);
+  state.customers = state.customers.filter(c=>c.id!==id);
+  save();
+  nav('customers');
+}
+
+Object.assign(window,{nav,changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,deleteCustomer,resetDemo,deleteAppointment,deleteGenericAppointment});
+
 render();

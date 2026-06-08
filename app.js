@@ -260,7 +260,7 @@ function agenda(){
       </div>
       ${calendarGrid()}
     </article>
-    <button class="primary agenda-add-btn" onclick="nav('newAppointment',{date:selectedAgendaDate,back:'agenda'})">+ Afspraak</button>
+    
 
     <div class="list-header">
       <h2>${fmt(selectedAgendaDate)}</h2>

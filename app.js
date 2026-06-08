@@ -1,4 +1,4 @@
-const KEY = 'onderhoudplanner_v06';
+const KEY = 'onderhoudplanner_v06_empty';
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
@@ -44,20 +44,10 @@ function makeSystem(customerId,type,brand,model,serial,installedAt,interval){
 
 const demoState = {
   company:'Airco Service',
-  customers:[
-    {id:crypto.randomUUID(), name:'Fam. Jansen', address:'Burgemeesterlaan 12, Rotterdam', phone:'0612345678', email:'info@jansenmail.nl'},
-    {id:crypto.randomUUID(), name:'De Vries', address:'Dordrecht', phone:'0611122233', email:'devries@mail.nl'},
-    {id:crypto.randomUUID(), name:'Bakker', address:'Gouda', phone:'0622233344', email:'bakker@mail.nl'}
-  ],
+  customers:[],
   systems:[],
   appointments:[]
 };
-
-demoState.systems = [
-  makeSystem(demoState.customers[0].id,'airco','Daikin','Emura','FTXG25LW','2026-06-07',12),
-  makeSystem(demoState.customers[1].id,'airco','Mitsubishi Electric','MSZ-LN','MSZ-LN35','2026-06-18',12),
-  makeSystem(demoState.customers[2].id,'warmtepomp','Daikin','Stylish','WP-09','2026-06-25',12)
-];
 
 let state = load();
 let route = {name:'dashboard'};
@@ -669,7 +659,7 @@ function settings(){
 
 function resetDemo(){
   localStorage.removeItem(KEY);
-  state = JSON.parse(JSON.stringify(demoState));
+  state = {company:'Airco Service', customers:[], systems:[], appointments:[]};
   save();
   nav('dashboard');
 }

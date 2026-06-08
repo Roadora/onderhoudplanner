@@ -1,0 +1,18 @@
+{
+  "name": "OnderhoudPlanner",
+  "short_name": "OnderhoudPlanner",
+  "description": "OnderhoudPlanner voor airco's en warmtepompen",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f7fb",
+  "theme_color": "#0757c8",
+  "icons": [
+    {
+      "src": "KTS_logo_transparant.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

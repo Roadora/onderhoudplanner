@@ -133,7 +133,7 @@ function nav(name, params={}){
 }
 
 function updateFab(){
-  const show = ['dashboard','customers','agenda'].includes(route.name);
+  const show = ['dashboard','customers'].includes(route.name);
   fabAdd.style.display = show ? 'block' : 'none';
   fabAdd.onclick = () => nav('new',{back:route.name});
 }

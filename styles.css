@@ -23,3 +23,14 @@
 .brand-other.show,.model-other.show{display:block}
 .edit-system-card{border:1px solid var(--line);background:#f8fafc;border-radius:16px;padding:13px;margin-top:10px}
 textarea{resize:vertical}
+
+.customer-memo{
+  margin-top:10px;
+  background:#fff7ed;
+  border:1px solid #fed7aa;
+  color:#9a3412;
+  border-radius:14px;
+  padding:10px;
+  font-size:13px;
+  line-height:1.35;
+}

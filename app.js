@@ -206,7 +206,7 @@ function customers(){
           <div>
             <p class="title">${c.name}</p>
             <p class="muted">${c.address}</p>
-            <p class="muted">${systemsForCustomer(c.id).length} systeem/systemen</p>
+            <p class="muted">${systemsForCustomer(c.id).length} systeem/systemen</p>${c.memo ? `<p class="muted">📝 ${esc(c.memo).slice(0,55)}${c.memo.length>55?'...':''}</p>` : ''}
           </div>
           <span class="right-chevron">›</span>
         </div>
@@ -352,6 +352,7 @@ function detail(id){
           <p class="muted">${c.address}</p>
           <p class="muted">☎ ${c.phone}</p>
           <p class="muted">✉ ${c.email}</p>
+          ${c.memo ? `<div class="customer-memo">📝 ${esc(c.memo)}</div>` : ''}
         </div>
       </div>
       <div class="actions">
@@ -481,6 +482,7 @@ function editCustomer(id){
           <div class="field"><label>Telefoon</label><input name="phone" value="${esc(c.phone)}"></div>
           <div class="field"><label>E-mail</label><input name="email" value="${esc(c.email)}"></div>
         </div>
+        <div class="field"><label>Memo klant</label><textarea name="memo" rows="4" placeholder="Interne notitie over deze klant">${esc(c.memo||'')}</textarea></div>
       </article>
       <article class="card">
         <h2>Geplaatste systemen</h2>
@@ -497,6 +499,7 @@ function editCustomer(id){
     c.address=f.address.value.trim();
     c.phone=f.phone.value.trim();
     c.email=f.email.value.trim();
+    c.memo=f.memo.value.trim();
     save();
     nav('detail',{customerId:c.id,back:'customers'});
   };
@@ -542,6 +545,7 @@ function newInstall(){
           <div class="field"><label>Telefoon</label><input name="phone" placeholder="06..."></div>
           <div class="field"><label>E-mail</label><input name="email" placeholder="mail@..."></div>
         </div>
+        <div class="field"><label>Memo klant</label><textarea name="memo" rows="3" placeholder="Bijv. klant wil alleen in de ochtend, sleutel bij buren, hond aanwezig..."></textarea></div>
       </div>
       ${systemFormFields({type:'airco',brand:'Daikin',model:'Emura',serial:'',installedAt:'',interval:12,reminderCompany:true,reminderCustomer:true})}
       <button class="primary" type="submit">Opslaan</button>
@@ -551,7 +555,7 @@ function newInstall(){
   const f=$('#newForm');
   const fill=()=>{
     const c=customer(f.existing.value);
-    ['name','address','phone','email'].forEach(k=>{
+    ['name','address','phone','email','memo'].forEach(k=>{
       f[k].value=c?c[k]:'';
       f[k].disabled=!!c;
     });
@@ -564,7 +568,7 @@ function newInstall(){
     e.preventDefault();
     let cid=f.existing.value;
     if(!cid){
-      const c={id:crypto.randomUUID(),name:f.name.value||'Nieuwe klant',address:f.address.value,phone:f.phone.value,email:f.email.value};
+      const c={id:crypto.randomUUID(),name:f.name.value||'Nieuwe klant',address:f.address.value,phone:f.phone.value,email:f.email.value,memo:f.memo ? f.memo.value.trim() : ''};
       state.customers.push(c);
       cid=c.id;
     }

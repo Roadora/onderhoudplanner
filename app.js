@@ -83,6 +83,23 @@ function sortedSystems(){ return [...state.systems].sort((a,b)=>nextDate(a).loca
 function appointments(){ return state.appointments || []; }
 function appointmentsOnDate(date){ return appointments().filter(a=>a.date===date).sort((a,b)=>(a.time||'').localeCompare(b.time||'')); }
 function appointmentForSystem(systemId){ return appointments().filter(a=>a.systemId===systemId).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0]; }
+
+function appointmentIcon(type){
+  if(type==='plaatsing') return '🛠';
+  if(type==='storing') return '🚨';
+  if(type==='controle') return '🔎';
+  return '❄️';
+}
+function appointmentTitle(type){
+  if(type==='plaatsing') return 'Plaatsing';
+  if(type==='storing') return 'Storing';
+  if(type==='controle') return 'Controle';
+  return 'Onderhoud';
+}
+function appointmentsForCustomer(customerId){
+  return appointments().filter(a=>a.customerId===customerId || (a.systemId && systemById(a.systemId)?.customerId===customerId));
+}
+
 function isSystemActiveForPlanning(s){
   if(s.serviceStatus === 'declined') return false;
   if(s.serviceStatus === 'paused'){
@@ -142,6 +159,7 @@ function render(){
   if(route.name==='editCustomer') editCustomer(route.customerId);
   if(route.name==='editSystem') editSystem(route.systemId);
   if(route.name==='planAppointment') planAppointment(route.systemId);
+  if(route.name==='newAppointment') newAppointment();
 
   updateFab();
 }
@@ -242,6 +260,7 @@ function agenda(){
       </div>
       ${calendarGrid()}
     </article>
+    <button class="primary agenda-add-btn" onclick="nav('newAppointment',{date:selectedAgendaDate,back:'agenda'})">+ Afspraak</button>
 
     <div class="list-header">
       <h2>${fmt(selectedAgendaDate)}</h2>
@@ -307,20 +326,22 @@ function agendaDayCard(s){
 }
 
 function appointmentCard(a){
-  const s=systemById(a.systemId);
-  if(!s) return '';
-  const c=customer(s.customerId)||{};
+  const s=a.systemId ? systemById(a.systemId) : null;
+  const c=(a.customerId ? customer(a.customerId) : null) || (s ? customer(s.customerId) : {}) || {};
+  const title = appointmentTitle(a.type || 'onderhoud');
+  const subtitle = s ? `${s.brand} ${s.model}` : (a.note || 'Afspraak');
   return `<article class="card compact">
     <div class="row between">
       <div>
-        <p class="title">📅 ${a.time||'Tijd onbekend'} · ${c.name}</p>
-        <p class="muted">${s.brand} ${s.model}</p>
-        <p class="muted">${a.note||'Onderhoudsafspraak'}</p>
+        <p class="title">${appointmentIcon(a.type)} ${a.time||'Tijd onbekend'} · ${title}</p>
+        <p class="muted">${c.name || 'Geen klant gekozen'}</p>
+        <p class="muted">${subtitle}</p>
+        ${a.note && s ? `<p class="muted">${a.note}</p>` : ''}
       </div>
-      <button class="edit-btn" onclick="nav('planAppointment',{systemId:'${s.id}',appointmentId:'${a.id}',back:'agenda'})">✏️</button>
+      <button class="edit-btn" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'agenda'})">✏️</button>
     </div>
     <div class="actions">
-      <a class="secondary" href="tel:${c.phone}">📞 Bel</a>
+      <a class="secondary" href="tel:${c.phone||''}">📞 Bel</a>
       <a class="secondary whatsapp" href="${whatsappLink(c)}">💬 WhatsApp</a>
     </div>
   </article>`;
@@ -374,6 +395,10 @@ function detail(id){
         <a class="secondary whatsapp" href="${whatsappLink(c)}">💬 WhatsApp</a>
       </div>
     </article>
+
+    <h2>Afspraken</h2>
+    ${appointmentsForCustomer(c.id).slice(0,3).map(appointmentCard).join('') || '<div class="card empty">Nog geen afspraken bij deze klant.</div>'}
+    <button class="secondary" onclick="nav('newAppointment',{customerId:'${c.id}',back:'detail'})">+ Afspraak bij deze klant</button>
 
     <h2>Systemen</h2>
     ${systems.map(s=>`<article class="card">
@@ -615,6 +640,80 @@ function newInstall(){
   };
 }
 
+
+function newAppointment(){
+  const existing = route.appointmentId ? appointments().find(a=>a.id===route.appointmentId) : null;
+  const customerId = existing?.customerId || route.customerId || state.customers[0]?.id || '';
+  const dateValue = existing?.date || route.date || selectedAgendaDate || todayKey();
+  const timeValue = existing?.time || '09:00';
+  const typeValue = existing?.type || 'plaatsing';
+  const noteValue = existing?.note || '';
+
+  app.innerHTML = `<section class="screen">
+    <form class="form" id="genericAppointmentForm">
+      <article class="card form">
+        <h2>Afspraak</h2>
+        <div class="field">
+          <label>Type afspraak</label>
+          <select name="type">
+            <option value="plaatsing" ${typeValue==='plaatsing'?'selected':''}>Plaatsing</option>
+            <option value="onderhoud" ${typeValue==='onderhoud'?'selected':''}>Onderhoud</option>
+            <option value="storing" ${typeValue==='storing'?'selected':''}>Storing</option>
+            <option value="controle" ${typeValue==='controle'?'selected':''}>Controle</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Klant</label>
+          <select name="customerId" required>
+            <option value="">Kies klant</option>
+            ${state.customers.map(c=>`<option value="${c.id}" ${c.id===customerId?'selected':''}>${c.name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="two">
+          <div class="field"><label>Datum</label><input name="date" type="date" value="${dateValue}" required></div>
+          <div class="field"><label>Tijd</label><input name="time" type="time" value="${timeValue}"></div>
+        </div>
+        <div class="field"><label>Notitie</label><textarea name="note" rows="3" placeholder="Bijv. nieuwe airco plaatsen slaapkamer">${esc(noteValue)}</textarea></div>
+      </article>
+      <button class="primary" type="submit">Afspraak opslaan</button>
+      ${existing?`<button class="danger" type="button" onclick="deleteGenericAppointment('${existing.id}')">Afspraak verwijderen</button>`:''}
+    </form>
+  </section>`;
+
+  const f=$('#genericAppointmentForm');
+  f.onsubmit=(e)=>{
+    e.preventDefault();
+    if(existing){
+      existing.type=f.type.value;
+      existing.customerId=f.customerId.value;
+      existing.systemId=null;
+      existing.date=f.date.value;
+      existing.time=f.time.value;
+      existing.note=f.note.value.trim();
+    }else{
+      state.appointments.push({
+        id:crypto.randomUUID(),
+        type:f.type.value,
+        customerId:f.customerId.value,
+        systemId:null,
+        date:f.date.value,
+        time:f.time.value,
+        note:f.note.value.trim()
+      });
+    }
+    save();
+    selectedAgendaDate=f.date.value;
+    calendarMonth=new Date(f.date.value+'T12:00:00');
+    nav('agenda');
+  };
+}
+function deleteGenericAppointment(id){
+  if(!confirm('Afspraak verwijderen?')) return;
+  state.appointments=appointments().filter(a=>a.id!==id);
+  save();
+  nav('agenda');
+}
+
 function planAppointment(systemId){
   const s=systemById(systemId);
   if(!s) return nav('agenda');
@@ -651,7 +750,7 @@ function planAppointment(systemId){
       existing.time=f.time.value;
       existing.note=f.note.value.trim();
     }else{
-      state.appointments.push({id:crypto.randomUUID(),systemId,date:f.date.value,time:f.time.value,note:f.note.value.trim()});
+      state.appointments.push({id:crypto.randomUUID(),type:'onderhoud',customerId:s.customerId,systemId,date:f.date.value,time:f.time.value,note:f.note.value.trim()});
     }
     save();
     selectedAgendaDate=f.date.value;
@@ -703,5 +802,5 @@ function resetDemo(){
   nav('dashboard');
 }
 
-Object.assign(window,{nav,changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,resetDemo,deleteAppointment});
+Object.assign(window,{nav,changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,resetDemo,deleteAppointment,deleteGenericAppointment});
 render();

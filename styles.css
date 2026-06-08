@@ -43,3 +43,6 @@ textarea{resize:vertical}
 .status-badge.paused{background:#fff7ed;color:#c2410c}
 .status-badge.stopped{background:#fee2e2;color:#b91c1c}
 .status-note{background:#f8fafc;color:#344054}
+
+
+.agenda-add-btn{margin:-2px 0 14px}

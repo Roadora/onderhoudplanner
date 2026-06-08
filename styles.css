@@ -15,3 +15,11 @@
 
 .model-other{display:none}
 .model-other.show{display:block}
+
+
+.appointment-set{background:#ecfdf3;color:#067647}
+.appointment-empty{background:#fff7ed;color:#c2410c}
+.brand-other,.model-other{display:none}
+.brand-other.show,.model-other.show{display:block}
+.edit-system-card{border:1px solid var(--line);background:#f8fafc;border-radius:16px;padding:13px;margin-top:10px}
+textarea{resize:vertical}

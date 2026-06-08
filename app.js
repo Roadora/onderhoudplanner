@@ -250,8 +250,6 @@ function customers(){
 }
 
 function agenda(){
-  const selectedSystems = sortedSystems().filter(s=>isSystemActiveForPlanning(s) && nextDate(s)===selectedAgendaDate);
-  const selectedAppointments = appointmentsOnDate(selectedAgendaDate);
   app.innerHTML = `<section class="screen">
     <article class="card calendar-card">
       <div class="calendar-head">
@@ -262,20 +260,6 @@ function agenda(){
       ${calendarGrid()}
     </article>
     <button class="primary agenda-add-btn" onclick="nav('newAppointment',{date:selectedAgendaDate,back:'agenda'})">+ Afspraak</button>
-
-    <div class="list-header">
-      <h2>${fmt(selectedAgendaDate)}</h2>
-      <button class="link" onclick="goToday()">Vandaag</button>
-    </div>
-
-    <h2>Geplande afspraken</h2>
-    ${selectedAppointments.map(appointmentCard).join('') || '<div class="card empty">Geen afspraken op deze dag.</div>'}
-
-    <h2>Onderhoud nodig</h2>
-    ${selectedSystems.map(agendaDayCard).join('') || '<div class="card empty">Geen onderhoud op deze dag.</div>'}
-
-    <h2>Volgende onderhouden</h2>
-    ${sortedSystems().slice(0,5).map(s=>systemCard(s,true)).join('') || '<div class="card empty">Geen onderhoud gepland.</div>'}
   </section>`;
 }
 
@@ -350,22 +334,25 @@ function appointmentCard(a){
 
 
 function dayPlan(date){
-  const dayAppointments = appointmentsOnDate(date);
+  const items = appointmentsOnDate(date);
   app.innerHTML = `<section class="screen">
     <div class="list-header">
       <h2>${fmt(date)}</h2>
       <button class="link" onclick="nav('agenda')">Kalender</button>
     </div>
 
-    ${dayAppointments.map(a=>{
+    ${items.map(a=>{
       const s=a.systemId ? systemById(a.systemId) : null;
       const c=(a.customerId ? customer(a.customerId) : null) || (s ? customer(s.customerId) : {}) || {};
       return `<article class="planner-card">
         <div class="planner-time">${a.time||'--:--'}</div>
-        <div class="planner-body">
-          <p class="title">${appointmentIcon(a.type)} ${appointmentTitle(a.type)}</p>
+        <div class="planner-content">
+          <div class="row between">
+            <p class="title">${appointmentTitle(a.type||'onderhoud')}</p>
+            <span class="status-badge active">Gepland</span>
+          </div>
           <p class="planner-name">${c.name||'Geen klant'}</p>
-          <p class="muted">${s ? s.brand+' '+s.model : (a.note||'Afspraak')}</p>
+          <p class="muted">${s ? s.brand+' '+s.model : ''}</p>
           <p class="muted">📍 ${c.address||''}</p>
           <div class="actions">
             <a class="secondary" href="tel:${c.phone||''}">📞 Bel</a>
@@ -375,7 +362,7 @@ function dayPlan(date){
       </article>`;
     }).join('') || '<div class="card empty">Geen afspraken op deze dag.</div>'}
 
-    <button class="primary" onclick="nav('newAppointment',{date:\''+date+'\',back:\'dayPlan\'})">+ Afspraak toevoegen</button>
+    <button class="primary" onclick="nav('newAppointment',{date:\''+date+'\',back:\'dayPlan\'})">+ Afspraak</button>
   </section>`;
 }
 function changeMonth(dir){

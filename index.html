@@ -3,82 +3,27 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Airco Service Planner</title>
+  <title>OnderhoudPlanner</title>
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
+      <button class="icon-btn" id="backBtn" hidden>←</button>
       <div>
-        <p class="eyebrow">Airco onderhoud</p>
-        <h1 id="screenTitle">Dashboard</h1>
+        <p class="eyebrow">OnderhoudPlanner</p>
+        <h1 id="pageTitle">Dashboard</h1>
       </div>
-      <button class="icon-btn" data-action="seed-demo" title="Demo data">↻</button>
+      <button class="icon-btn" id="notifyBtn">🔔</button>
     </header>
 
-    <main>
-      <section class="screen active" id="dashboardScreen">
-        <div class="hero-card">
-          <p>Vandaag opvolgen</p>
-          <h2 id="todayCount">0 klanten</h2>
-          <span id="nextReminderText">Geen onderhoud verlopen</span>
-        </div>
-        <div class="stats-grid">
-          <div class="stat"><strong id="activeCustomers">0</strong><span>Actieve klanten</span></div>
-          <div class="stat"><strong id="monthCount">0</strong><span>Deze maand</span></div>
-          <div class="stat"><strong id="soonCount">0</strong><span>Binnen 30 dagen</span></div>
-          <div class="stat"><strong id="doneCount">0</strong><span>Uitgevoerd</span></div>
-        </div>
-        <div class="section-head"><h3>Onderhoud nodig</h3><button data-screen="agendaScreen">Alles zien</button></div>
-        <div id="dueList" class="card-list"></div>
-      </section>
-
-      <section class="screen" id="customersScreen">
-        <div class="section-head"><h3>Klanten</h3><button data-screen="newScreen">+ Nieuw</button></div>
-        <input class="search" id="customerSearch" placeholder="Zoek klant, adres of merk..." />
-        <div id="customerList" class="card-list"></div>
-      </section>
-
-      <section class="screen" id="newScreen">
-        <form id="installationForm" class="form-card">
-          <h3>Nieuwe installatie</h3>
-          <label>Klantnaam<input required name="name" placeholder="Bijv. Jansen" /></label>
-          <label>Adres<input name="address" placeholder="Straat + plaats" /></label>
-          <label>Telefoon<input name="phone" placeholder="06..." /></label>
-          <label>E-mail<input name="email" type="email" placeholder="klant@email.nl" /></label>
-          <div class="form-row">
-            <label>Merk<input name="brand" placeholder="Daikin" /></label>
-            <label>Model<input name="model" placeholder="Emura" /></label>
-          </div>
-          <label>Plaatsingsdatum<input required name="installDate" type="date" /></label>
-          <label>Interval
-            <select name="intervalMonths">
-              <option value="12">Iedere 12 maanden</option>
-              <option value="6">Iedere 6 maanden</option>
-              <option value="24">Iedere 24 maanden</option>
-            </select>
-          </label>
-          <button class="primary" type="submit">Installatie opslaan</button>
-        </form>
-      </section>
-
-      <section class="screen" id="agendaScreen">
-        <div class="section-head"><h3>Onderhoudsagenda</h3><button data-action="export-csv">Export</button></div>
-        <div class="tabs"><button class="tab active" data-filter="all">Alles</button><button class="tab" data-filter="overdue">Verlopen</button><button class="tab" data-filter="soon">30 dagen</button></div>
-        <div id="agendaList" class="card-list"></div>
-      </section>
-
-      <section class="screen" id="detailScreen">
-        <button class="back-btn" data-screen="customersScreen">← Terug</button>
-        <div id="detailContent"></div>
-      </section>
-    </main>
+    <main id="app"></main>
 
     <nav class="bottom-nav">
-      <button class="active" data-screen="dashboardScreen">⌂<span>Home</span></button>
-      <button data-screen="customersScreen">☰<span>Klanten</span></button>
-      <button class="add" data-screen="newScreen">＋</button>
-      <button data-screen="agendaScreen">◷<span>Agenda</span></button>
+      <button data-route="dashboard" class="active">▦<span>Dashboard</span></button>
+      <button data-route="customers">👥<span>Klanten</span></button>
+      <button data-route="agenda">📅<span>Agenda</span></button>
+      <button data-route="settings">⚙<span>Instellingen</span></button>
     </nav>
   </div>
   <script src="js/app.js"></script>

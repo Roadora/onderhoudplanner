@@ -146,7 +146,7 @@ function render(){
   const titles = {
     dashboard:'Dashboard', customers:'Klanten', agenda:'Agenda', settings:'Instellingen',
     new:'Nieuwe installatie', detail:'Klantdetail', editCustomer:'Klant bewerken',
-    editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen'
+    editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', dayPlan:'Dagplanning'
   };
   pageTitle.textContent = titles[route.name] || 'OnderhoudPlanner';
 
@@ -160,6 +160,7 @@ function render(){
   if(route.name==='editSystem') editSystem(route.systemId);
   if(route.name==='planAppointment') planAppointment(route.systemId);
   if(route.name==='newAppointment') newAppointment();
+  if(route.name==='dayPlan') dayPlan(route.date);
 
   updateFab();
 }
@@ -263,7 +264,7 @@ function agenda(){
     <button class="primary agenda-add-btn" onclick="nav('newAppointment',{date:selectedAgendaDate,back:'agenda'})">+ Afspraak</button>
 
     <div class="list-header">
-      <button class="day-title-btn" onclick="nav('newAppointment',{date:selectedAgendaDate,back:'agenda'})">${selectedAgendaDate===todayKey() ? 'Vandaag' : fmt(selectedAgendaDate)}</button>
+      <h2>${fmt(selectedAgendaDate)}</h2>
       <button class="link" onclick="goToday()">Vandaag</button>
     </div>
 
@@ -295,7 +296,7 @@ function calendarGrid(){
     const has=eventDates.has(key);
     const active=selectedAgendaDate===key;
     const today=todayKey()===key;
-    cells += `<button class="calendar-day ${has?'has-event':''} ${active?'active':''} ${today?'today':''}" onclick="selectAgendaDate('${key}')">
+    cells += `<button class="calendar-day ${has?'has-event':''} ${active?'active':''} ${today?'today':''}" onclick="nav('dayPlan',{date:'${key}',back:'agenda'})">
       <span>${day}</span>${has?'<i></i>':''}
     </button>`;
   }
@@ -347,6 +348,36 @@ function appointmentCard(a){
   </article>`;
 }
 
+
+function dayPlan(date){
+  const dayAppointments = appointmentsOnDate(date);
+  app.innerHTML = `<section class="screen">
+    <div class="list-header">
+      <h2>${fmt(date)}</h2>
+      <button class="link" onclick="nav('agenda')">Kalender</button>
+    </div>
+
+    ${dayAppointments.map(a=>{
+      const s=a.systemId ? systemById(a.systemId) : null;
+      const c=(a.customerId ? customer(a.customerId) : null) || (s ? customer(s.customerId) : {}) || {};
+      return `<article class="planner-card">
+        <div class="planner-time">${a.time||'--:--'}</div>
+        <div class="planner-body">
+          <p class="title">${appointmentIcon(a.type)} ${appointmentTitle(a.type)}</p>
+          <p class="planner-name">${c.name||'Geen klant'}</p>
+          <p class="muted">${s ? s.brand+' '+s.model : (a.note||'Afspraak')}</p>
+          <p class="muted">📍 ${c.address||''}</p>
+          <div class="actions">
+            <a class="secondary" href="tel:${c.phone||''}">📞 Bel</a>
+            <a class="secondary whatsapp" href="${whatsappLink(c)}">💬 WhatsApp</a>
+          </div>
+        </div>
+      </article>`;
+    }).join('') || '<div class="card empty">Geen afspraken op deze dag.</div>'}
+
+    <button class="primary" onclick="nav('newAppointment',{date:\''+date+'\',back:\'dayPlan\'})">+ Afspraak toevoegen</button>
+  </section>`;
+}
 function changeMonth(dir){
   calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth()+dir, 1);
   selectedAgendaDate = toDateKey(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1));

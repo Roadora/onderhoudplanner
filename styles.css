@@ -51,20 +51,23 @@ textarea{resize:vertical}
 .new-customer-fields{display:none}
 .new-customer-fields.show{display:grid;gap:12px}
 
-
-.calendar-day{cursor:pointer}
-.day-title-btn{
-  border:0;
-  background:transparent;
-  color:var(--text);
-  font-size:18px;
-  font-weight:900;
-  padding:0;
-  text-align:left;
+.planner-card{
+ display:grid;
+ grid-template-columns:80px 1fr;
+ gap:12px;
+ background:#fff;
+ border:1px solid var(--line);
+ border-radius:22px;
+ padding:16px;
+ margin-bottom:12px;
+ box-shadow:0 8px 22px rgba(16,24,40,.06);
 }
-.day-title-btn::after{
-  content:"  + afspraak";
-  color:var(--blue);
-  font-size:13px;
-  font-weight:800;
+.planner-time{
+ font-size:22px;
+ font-weight:900;
+ color:var(--blue);
+ display:flex;
+ align-items:flex-start;
+ justify-content:center;
 }
+.planner-name{font-weight:800;margin:6px 0}

@@ -509,10 +509,14 @@ function toggleStatusLater(form){
     if(form.serviceStatus.value === 'declined'){
       form.interval.value = '0';
       form.interval.disabled = true;
+    }else if(form.serviceStatus.value === 'paused'){
+      form.interval.disabled = false;
+      if(form.interval.dataset.lastStatus !== 'paused') form.interval.value = '0';
     }else{
       form.interval.disabled = false;
       if(form.interval.value === '0') form.interval.value = '12';
     }
+    form.interval.dataset.lastStatus = form.serviceStatus.value;
   }
 }
 function wireSystemForm(form, currentModel=''){

@@ -666,8 +666,18 @@ function newAppointment(){
           <label>Klant</label>
           <select name="customerId" required>
             <option value="">Kies klant</option>
+            <option value="__new__">+ Nieuwe klant</option>
             ${state.customers.map(c=>`<option value="${c.id}" ${c.id===customerId?'selected':''}>${c.name}</option>`).join('')}
           </select>
+        </div>
+        <div class="new-customer-fields">
+          <div class="field"><label>Nieuwe klantnaam</label><input name="newName" placeholder="Bijv. Fam. Jansen"></div>
+          <div class="field"><label>Adres</label><input name="newAddress" placeholder="Straat, plaats"></div>
+          <div class="two">
+            <div class="field"><label>Telefoon</label><input name="newPhone" placeholder="06..."></div>
+            <div class="field"><label>E-mail</label><input name="newEmail" placeholder="mail@..."></div>
+          </div>
+          <div class="field"><label>Memo klant</label><textarea name="newMemo" rows="2" placeholder="Interne notitie"></textarea></div>
         </div>
         <div class="two">
           <div class="field"><label>Datum</label><input name="date" type="date" value="${dateValue}" required></div>
@@ -681,11 +691,30 @@ function newAppointment(){
   </section>`;
 
   const f=$('#genericAppointmentForm');
+  const toggleNewCustomerFields=()=>{
+    const wrap=f.querySelector('.new-customer-fields');
+    if(wrap) wrap.classList.toggle('show', f.customerId.value==='__new__');
+  };
+  f.customerId.onchange=toggleNewCustomerFields;
+  toggleNewCustomerFields();
   f.onsubmit=(e)=>{
     e.preventDefault();
+    let appointmentCustomerId=f.customerId.value;
+    if(appointmentCustomerId==='__new__'){
+      const newCustomer={
+        id:crypto.randomUUID(),
+        name:f.newName.value.trim() || 'Nieuwe klant',
+        address:f.newAddress.value.trim(),
+        phone:f.newPhone.value.trim(),
+        email:f.newEmail.value.trim(),
+        memo:f.newMemo ? f.newMemo.value.trim() : ''
+      };
+      state.customers.push(newCustomer);
+      appointmentCustomerId=newCustomer.id;
+    }
     if(existing){
       existing.type=f.type.value;
-      existing.customerId=f.customerId.value;
+      existing.customerId=appointmentCustomerId;
       existing.systemId=null;
       existing.date=f.date.value;
       existing.time=f.time.value;
@@ -694,7 +723,7 @@ function newAppointment(){
       state.appointments.push({
         id:crypto.randomUUID(),
         type:f.type.value,
-        customerId:f.customerId.value,
+        customerId:appointmentCustomerId,
         systemId:null,
         date:f.date.value,
         time:f.time.value,

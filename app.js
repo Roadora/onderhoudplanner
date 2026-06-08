@@ -70,7 +70,7 @@ function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
 function todayKey(){ return new Date().toISOString().slice(0,10); }
 function toDateKey(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function addMonths(date, months){ const d=new Date(date+'T12:00:00'); d.setMonth(d.getMonth()+Number(months)); return d.toISOString().slice(0,10); }
-function nextDate(s){ return addMonths(s.lastService || s.installedAt, s.interval || 12); }
+function nextDate(s){ return addMonths(s.lastService || s.installedAt, Number(s.interval) || 0); }
 function daysUntil(date){ const a=new Date(); a.setHours(0,0,0,0); const b=new Date(date+'T00:00:00'); return Math.ceil((b-a)/86400000); }
 function fmt(date){ return new Date(date+'T12:00:00').toLocaleDateString('nl-NL',{day:'numeric',month:'long',year:'numeric'}); }
 function monthLabel(date){ return date.toLocaleDateString('nl-NL',{month:'long',year:'numeric'}); }
@@ -472,22 +472,12 @@ function systemFormFields(s={}){
 
   return `<div class="card form">
     <h2>Systeem</h2>
-    <div class="two">
-      <div class="field">
-        <label>Type</label>
-        <select name="type">
-          <option value="airco" ${s.type==='airco' || !s.type ? 'selected' : ''}>Airco</option>
-          <option value="warmtepomp" ${s.type==='warmtepomp' ? 'selected' : ''}>Warmtepomp</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Interval</label>
-        <select name="interval">
-          <option value="12" ${Number(s.interval||12)===12?'selected':''}>12 maanden</option>
-          <option value="6" ${Number(s.interval)===6?'selected':''}>6 maanden</option>
-          <option value="24" ${Number(s.interval)===24?'selected':''}>24 maanden</option>
-        </select>
-      </div>
+    <div class="field">
+      <label>Type</label>
+      <select name="type">
+        <option value="airco" ${s.type==='airco' || !s.type ? 'selected' : ''}>Airco</option>
+        <option value="warmtepomp" ${s.type==='warmtepomp' ? 'selected' : ''}>Warmtepomp</option>
+      </select>
     </div>
     <div class="field"><label>Merk</label><select name="brand">${brandSelectOptions(brand)}</select></div>
     <div class="field brand-other ${knownBrand?'':'show'}"><label>Eigen merk</label><input name="brandOther" value="${knownBrand?'':esc(brand)}" placeholder="Vul eigen merk in"></div>
@@ -496,6 +486,15 @@ function systemFormFields(s={}){
     <div class="field"><label>Serienummer</label><input name="serial" value="${esc(s.serial||'')}" placeholder="FTXG25LW"></div>
     <div class="field"><label>Installatiedatum</label><input name="installedAt" type="date" value="${s.installedAt||''}" required></div>
     <div class="field"><label>Onderhoudsstatus</label><select name="serviceStatus"><option value="active" ${!s.serviceStatus || s.serviceStatus==='active'?'selected':''}>Actief onderhoud</option><option value="paused" ${s.serviceStatus==='paused'?'selected':''}>Klant wil later</option><option value="declined" ${s.serviceStatus==='declined'?'selected':''}>Klant wil geen onderhoud</option></select></div>
+    <div class="field">
+      <label>Interval</label>
+      <select name="interval">
+        <option value="12" ${Number(s.interval||12)===12?'selected':''}>12 maanden</option>
+        <option value="6" ${Number(s.interval)===6?'selected':''}>6 maanden</option>
+        <option value="24" ${Number(s.interval)===24?'selected':''}>24 maanden</option>
+        <option value="0" ${Number(s.interval)===0?'selected':''}>0 maanden</option>
+      </select>
+    </div>
     <div class="field status-later ${s.serviceStatus==='paused'?'show':''}"><label>Opnieuw benaderen op</label><input name="pausedUntil" type="date" value="${s.pausedUntil||''}"></div>
     <div class="field"><label>Statusnotitie</label><textarea name="statusNote" rows="2" placeholder="Bijv. klant wil na vakantie gebeld worden">${esc(s.statusNote||'')}</textarea></div>
     <label><input type="checkbox" name="reminderCompany" ${s.reminderCompany!==false?'checked':''}> Herinner mij / mijn bedrijf</label>
@@ -506,6 +505,15 @@ function systemFormFields(s={}){
 function toggleStatusLater(form){
   const wrap = form.pausedUntil?.closest('.status-later');
   if(wrap) wrap.classList.toggle('show', form.serviceStatus?.value === 'paused');
+  if(form.serviceStatus && form.interval){
+    if(form.serviceStatus.value === 'declined'){
+      form.interval.value = '0';
+      form.interval.disabled = true;
+    }else{
+      form.interval.disabled = false;
+      if(form.interval.value === '0') form.interval.value = '12';
+    }
+  }
 }
 function wireSystemForm(form, currentModel=''){
   form.brand.onchange=()=>{ toggleOtherBrand(form); refreshModelOptions(form); };
@@ -537,7 +545,7 @@ function editCustomer(id){
         <h2>Geplaatste systemen</h2>
         ${systems.map(s=>`<div class="edit-system-card"><div class="row between"><div><p class="title">${s.type==='warmtepomp'?'♨️ Warmtepomp':'❄️ Airco'}</p><p class="muted">${s.brand} ${s.model}</p><p class="muted">Volgend onderhoud: ${fmt(nextDate(s))}</p></div><button type="button" class="edit-btn" onclick="nav('editSystem',{systemId:'${s.id}',back:'editCustomer'})">✏️</button></div></div>`).join('') || '<p class="muted">Nog geen systemen.</p>'}
       </article>
-      <button class="primary" type="submit">Klant opslaan</button><button class="danger" type="button" onclick="deleteCustomer(\'${c.id}\')">🗑 Klant verwijderen</button>
+      <button class="primary" type="submit">Klant opslaan</button>
     </form>
   </section>`;
 
@@ -567,12 +575,13 @@ function editSystem(id){
     s.model=selectedModel(f);
     s.serial=f.serial.value.trim();
     s.installedAt=f.installedAt.value;
-    s.interval=Number(f.interval.value);
     s.serviceStatus=f.serviceStatus.value;
+    s.interval=s.serviceStatus==='declined' ? 0 : Number(f.interval.value);
     s.pausedUntil=f.serviceStatus.value==='paused' ? (f.pausedUntil.value || null) : null;
     s.statusNote=f.statusNote.value.trim();
     if(s.serviceStatus==='declined') state.appointments=appointments().filter(a=>a.systemId!==s.id);
     s.serviceStatus=f.serviceStatus.value;
+    s.interval=s.serviceStatus==='declined' ? 0 : Number(f.interval.value);
     s.pausedUntil=f.serviceStatus.value==='paused' ? (f.pausedUntil.value || null) : null;
     s.statusNote=f.statusNote.value.trim();
     s.reminderCompany=f.reminderCompany.checked;
@@ -630,6 +639,7 @@ function newInstall(){
     }
     const s=makeSystem(cid,f.type.value,selectedBrand(f),selectedModel(f),f.serial.value,f.installedAt.value,f.interval.value);
     s.serviceStatus=f.serviceStatus.value;
+    s.interval=s.serviceStatus==='declined' ? 0 : Number(f.interval.value);
     s.pausedUntil=f.serviceStatus.value==='paused' ? (f.pausedUntil.value || null) : null;
     s.statusNote=f.statusNote.value.trim();
     s.reminderCompany=f.reminderCompany.checked;
@@ -831,16 +841,5 @@ function resetDemo(){
   nav('dashboard');
 }
 
-
-function deleteCustomer(id){
-  if(!confirm('Klant en alle gekoppelde systemen en afspraken verwijderen?')) return;
-  state.systems = state.systems.filter(s=>s.customerId!==id);
-  state.appointments = appointments().filter(a=>a.customerId!==id);
-  state.customers = state.customers.filter(c=>c.id!==id);
-  save();
-  nav('customers');
-}
-
-Object.assign(window,{nav,changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,deleteCustomer,resetDemo,deleteAppointment,deleteGenericAppointment});
-
+Object.assign(window,{nav,changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,resetDemo,deleteAppointment,deleteGenericAppointment});
 render();

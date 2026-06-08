@@ -42,6 +42,54 @@ function selectedBrand(form){
   return form.brand.value || '-';
 }
 
+const MODEL_OPTIONS = {
+  'Daikin':['Emura','Stylish','Perfera','Comfora','Sensira','Ururu Sarara','Altherma','Multi+','Anders...'],
+  'Mitsubishi Electric':['MSZ-LN','MSZ-AP','MSZ-AY','MSZ-HR','MSZ-EF','Ecodan','Anders...'],
+  'LG':['Artcool','Dualcool','Standard Plus','Therma V','Anders...'],
+  'Samsung':['WindFree Elite','WindFree Comfort','Luzon','EHS Mono','EHS Split','Anders...'],
+  'Panasonic':['Etherea','TZ','BZ','Aquarea','Anders...'],
+  'Toshiba':['Daiseikai','Haori','Seiya','Shorai Edge','Estia','Anders...'],
+  'Fujitsu':['ASYG','KGTA','KMTA','Waterstage','Anders...'],
+  'Hitachi':['airHome','Dodai','Mokai','Yutaki','Anders...'],
+  'Midea':['Xtreme Save','Breezeless','Mission','Arctic','Anders...'],
+  'Haier':['Pearl','Flexis','Tundra','Jade','Anders...'],
+  'Carrier':['QHG','QHC','XPower','AquaSnap','Anders...'],
+  'Gree':['Amber','Fairy','U-Crown','Versati','Anders...'],
+  'Hisense':['Energy Pro','Wings','Easy Smart','Hi-Therma','Anders...'],
+  'Bosch':['Climate 3000i','Climate 5000i','Compress 3400i','Compress 5800i','Anders...'],
+  'NIBE':['S2125','F2120','F2040','VVM','AMS','Anders...'],
+  'Vaillant':['aroTHERM plus','aroTHERM split','uniTOWER','Anders...'],
+  'Remeha':['Elga Ace','Mercuria Ace','Eria Tower','Anders...'],
+  'Intergas':['Xtend','Anders...'],
+  'Nefit Bosch':['EnviLine','Compress 3400i','Compress 5800i','Anders...'],
+  'Atlantic':['Alfea Extensa','Alfea Excellia','Fujitsu Atlantic','Anders...'],
+  'Viessmann':['Vitocal 100-S','Vitocal 150-A','Vitocal 200-S','Anders...'],
+  'Stiebel Eltron':['WPL','LWZ','WPE-I','Anders...'],
+  'Weishaupt':['Biblock','Aeroblock','Anders...']
+};
+function modelSelectOptions(brand='', value=''){
+  const list = MODEL_OPTIONS[brand] || ['Anders...'];
+  const known = list.includes(value);
+  return list.map(m => `<option value="${m}" ${((known && m===value) || (!known && m==='Anders...')) ? 'selected' : ''}>${m}</option>`).join('');
+}
+function toggleOtherModel(form){
+  if(!form || !form.model || !form.modelOther) return;
+  const wrap = form.modelOther.closest('.model-other');
+  if(wrap) wrap.classList.toggle('show', form.model.value === 'Anders...');
+}
+function refreshModelOptions(form, value=''){
+  if(!form || !form.brand || !form.model) return;
+  const brand = selectedBrand(form);
+  form.model.innerHTML = modelSelectOptions(brand, value);
+  toggleOtherModel(form);
+}
+function selectedModel(form){
+  if(!form || !form.model) return '-';
+  if(form.model.value === 'Anders...') return (form.modelOther.value || '').trim() || 'Anders';
+  return form.model.value || '-';
+}
+
+
 function sys(customerId,type,brand,model,serial,installedAt,interval){return {id: crypto.randomUUID(), customerId,type,brand,model,serial,installedAt,interval:Number(interval), lastService:null, reminderCustomer:true, reminderCompany:true, doneCount:0}}
 function load(){try{return JSON.parse(localStorage.getItem(KEY)) || demoState}catch(e){return demoState}}
 function save(){localStorage.setItem(KEY, JSON.stringify(state))}
@@ -91,19 +139,24 @@ function detail(id){
 
 function systemFormFields(s={}){
   const brand = s.brand || 'Daikin';
-  const known = BRAND_OPTIONS.includes(brand);
-  const otherClass = known ? '' : 'show';
-  const otherValue = known ? '' : brand;
-  return `<div class="card form"><h2>Systeem</h2><div class="two"><div class="field"><label>Type</label><select name="type"><option value="airco" ${s.type==='airco' || !s.type ? 'selected' : ''}>Airco</option><option value="warmtepomp" ${s.type==='warmtepomp' ? 'selected' : ''}>Warmtepomp</option></select></div><div class="field"><label>Interval</label><select name="interval"><option value="12" ${Number(s.interval||12)===12?'selected':''}>12 maanden</option><option value="6" ${Number(s.interval)===6?'selected':''}>6 maanden</option><option value="24" ${Number(s.interval)===24?'selected':''}>24 maanden</option></select></div></div><div class="field"><label>Merk</label><select name="brand">${brandSelectOptions(brand)}</select></div><div class="field brand-other ${otherClass}"><label>Eigen merk</label><input name="brandOther" value="${escapeAttr(otherValue)}" placeholder="Vul eigen merk in"></div><div class="two"><div class="field"><label>Model</label><input name="model" value="${escapeAttr(s.model||'')}" placeholder="Emura"></div><div class="field"><label>Serienummer</label><input name="serial" value="${escapeAttr(s.serial||'')}" placeholder="FTXG25LW"></div></div><div class="field"><label>Installatiedatum</label><input name="installedAt" type="date" value="${s.installedAt||''}" required></div><label><input type="checkbox" name="reminderCompany" ${s.reminderCompany!==false?'checked':''}> Herinner mij / mijn bedrijf</label><label><input type="checkbox" name="reminderCustomer" ${s.reminderCustomer!==false?'checked':''}> Herinner ook de klant</label></div>`;
+  const knownBrand = BRAND_OPTIONS.includes(brand);
+  const otherBrandClass = knownBrand ? '' : 'show';
+  const otherBrandValue = knownBrand ? '' : brand;
+  const model = s.model || '';
+  const modelList = MODEL_OPTIONS[brand] || ['Anders...'];
+  const knownModel = modelList.includes(model);
+  const otherModelClass = knownModel ? '' : 'show';
+  const otherModelValue = knownModel ? '' : model;
+  return `<div class="card form"><h2>Systeem</h2><div class="two"><div class="field"><label>Type</label><select name="type"><option value="airco" ${s.type==='airco' || !s.type ? 'selected' : ''}>Airco</option><option value="warmtepomp" ${s.type==='warmtepomp' ? 'selected' : ''}>Warmtepomp</option></select></div><div class="field"><label>Interval</label><select name="interval"><option value="12" ${Number(s.interval||12)===12?'selected':''}>12 maanden</option><option value="6" ${Number(s.interval)===6?'selected':''}>6 maanden</option><option value="24" ${Number(s.interval)===24?'selected':''}>24 maanden</option></select></div></div><div class="field"><label>Merk</label><select name="brand">${brandSelectOptions(brand)}</select></div><div class="field brand-other ${otherBrandClass}"><label>Eigen merk</label><input name="brandOther" value="${escapeAttr(otherBrandValue)}" placeholder="Vul eigen merk in"></div><div class="field"><label>Model</label><select name="model">${modelSelectOptions(brand, model)}</select></div><div class="field model-other ${otherModelClass}"><label>Eigen model</label><input name="modelOther" value="${escapeAttr(otherModelValue)}" placeholder="Vul eigen model in"></div><div class="field"><label>Serienummer</label><input name="serial" value="${escapeAttr(s.serial||'')}" placeholder="FTXG25LW"></div><div class="field"><label>Installatiedatum</label><input name="installedAt" type="date" value="${s.installedAt||''}" required></div><label><input type="checkbox" name="reminderCompany" ${s.reminderCompany!==false?'checked':''}> Herinner mij / mijn bedrijf</label><label><input type="checkbox" name="reminderCustomer" ${s.reminderCustomer!==false?'checked':''}> Herinner ook de klant</label></div>`;
 }
 
 function editSystem(id){
   const s=state.systems.find(x=>x.id===id); if(!s)return nav('customers');
   app.innerHTML=`<section class="screen"><form class="form" id="editSystemForm">${systemFormFields(s)}<button class="primary" type="submit">Systeem opslaan</button></form></section>`;
-  const f=$('#editSystemForm'); f.brand.onchange=()=>toggleOtherBrand(f); toggleOtherBrand(f);
-  f.onsubmit=(e)=>{e.preventDefault(); s.type=f.type.value; s.brand=selectedBrand(f); s.model=f.model.value.trim()||'-'; s.serial=f.serial.value.trim(); s.installedAt=f.installedAt.value; s.interval=Number(f.interval.value); s.reminderCompany=f.reminderCompany.checked; s.reminderCustomer=f.reminderCustomer.checked; save(); nav('detail',{customerId:s.customerId,back:'customers'});};
+  const f=$('#editSystemForm'); f.brand.onchange=()=>{toggleOtherBrand(f); refreshModelOptions(f);}; f.model.onchange=()=>toggleOtherModel(f); toggleOtherBrand(f); refreshModelOptions(f, s.model);
+  f.onsubmit=(e)=>{e.preventDefault(); s.type=f.type.value; s.brand=selectedBrand(f); s.model=selectedModel(f); s.serial=f.serial.value.trim(); s.installedAt=f.installedAt.value; s.interval=Number(f.interval.value); s.reminderCompany=f.reminderCompany.checked; s.reminderCustomer=f.reminderCustomer.checked; save(); nav('detail',{customerId:s.customerId,back:'customers'});};
 }
-function newInstall(){const selected=route.customerId||''; app.innerHTML=`<section class="screen"><form class="form" id="newForm"><div class="card form"><h2>Klantgegevens</h2><div class="field"><label>Bestaande klant</label><select name="existing"><option value="">Nieuwe klant</option>${state.customers.map(c=>`<option value="${c.id}" ${c.id===selected?'selected':''}>${c.name}</option>`).join('')}</select></div><div class="field"><label>Klantnaam</label><input name="name" placeholder="Bijv. Fam. Jansen"></div><div class="field"><label>Adres</label><input name="address" placeholder="Straat, plaats"></div><div class="two"><div class="field"><label>Telefoon</label><input name="phone" placeholder="06..."></div><div class="field"><label>E-mail</label><input name="email" placeholder="mail@..."></div></div></div>${systemFormFields({type:'airco',brand:'Daikin',model:'',serial:'',installedAt:'',interval:12,reminderCompany:true,reminderCustomer:true})}<button class="primary" type="submit">Opslaan</button></form></section>`; const f=$('#newForm'); const fill=()=>{const c=customer(f.existing.value); ['name','address','phone','email'].forEach(k=>{f[k].value=c?c[k]:''; f[k].disabled=!!c;});}; f.existing.onchange=fill; f.brand.onchange=()=>toggleOtherBrand(f); fill(); toggleOtherBrand(f); f.onsubmit=(e)=>{e.preventDefault(); let cid=f.existing.value; if(!cid){const c={id:crypto.randomUUID(),name:f.name.value||'Nieuwe klant',address:f.address.value,phone:f.phone.value,email:f.email.value}; state.customers.push(c); cid=c.id;} const s=sys(cid,f.type.value,selectedBrand(f),f.model.value||'-',f.serial.value,f.installedAt.value, f.interval.value); s.reminderCompany=f.reminderCompany.checked; s.reminderCustomer=f.reminderCustomer.checked; state.systems.push(s); save(); nav('detail',{customerId:cid,back:'customers'});};}
+function newInstall(){const selected=route.customerId||''; app.innerHTML=`<section class="screen"><form class="form" id="newForm"><div class="card form"><h2>Klantgegevens</h2><div class="field"><label>Bestaande klant</label><select name="existing"><option value="">Nieuwe klant</option>${state.customers.map(c=>`<option value="${c.id}" ${c.id===selected?'selected':''}>${c.name}</option>`).join('')}</select></div><div class="field"><label>Klantnaam</label><input name="name" placeholder="Bijv. Fam. Jansen"></div><div class="field"><label>Adres</label><input name="address" placeholder="Straat, plaats"></div><div class="two"><div class="field"><label>Telefoon</label><input name="phone" placeholder="06..."></div><div class="field"><label>E-mail</label><input name="email" placeholder="mail@..."></div></div></div>${systemFormFields({type:'airco',brand:'Daikin',model:'',serial:'',installedAt:'',interval:12,reminderCompany:true,reminderCustomer:true})}<button class="primary" type="submit">Opslaan</button></form></section>`; const f=$('#newForm'); const fill=()=>{const c=customer(f.existing.value); ['name','address','phone','email'].forEach(k=>{f[k].value=c?c[k]:''; f[k].disabled=!!c;});}; f.existing.onchange=fill; f.brand.onchange=()=>{toggleOtherBrand(f); refreshModelOptions(f);}; f.model.onchange=()=>toggleOtherModel(f); fill(); toggleOtherBrand(f); refreshModelOptions(f); f.onsubmit=(e)=>{e.preventDefault(); let cid=f.existing.value; if(!cid){const c={id:crypto.randomUUID(),name:f.name.value||'Nieuwe klant',address:f.address.value,phone:f.phone.value,email:f.email.value}; state.customers.push(c); cid=c.id;} const s=sys(cid,f.type.value,selectedBrand(f),selectedModel(f),f.serial.value,f.installedAt.value, f.interval.value); s.reminderCompany=f.reminderCompany.checked; s.reminderCustomer=f.reminderCustomer.checked; state.systems.push(s); save(); nav('detail',{customerId:cid,back:'customers'});};}
 function markDone(id){const s=state.systems.find(x=>x.id===id); if(!s)return; s.lastService=new Date().toISOString().slice(0,10); s.doneCount=(s.doneCount||0)+1; save(); render();}
 function deleteSystem(id){if(!confirm('Systeem verwijderen?'))return; state.systems=state.systems.filter(s=>s.id!==id); save(); render();}
 function settings(){app.innerHTML=`<section class="screen"><article class="card"><p class="title">Instellingen</p><p class="muted">v0.1 werkt lokaal met localStorage. Supabase/login en automatische e-mails komen later.</p><button class="danger" onclick="resetDemo()">Reset demo-data</button></article></section>`}

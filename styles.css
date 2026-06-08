@@ -11,3 +11,7 @@
 .brand-other{display:none}
 .brand-other.show{display:block}
 .edit-system-card{border:1px solid var(--line);background:#f8fafc;border-radius:16px;padding:13px;margin-top:10px}
+
+
+.model-other{display:none}
+.model-other.show{display:block}

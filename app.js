@@ -39,7 +39,7 @@ const MODEL_OPTIONS = {
 };
 
 function makeSystem(customerId,type,brand,model,serial,installedAt,interval){
-  return { id: crypto.randomUUID(), customerId, type, brand, model, serial, installedAt, interval:Number(interval), lastService:null, reminderCustomer:true, reminderCompany:true, doneCount:0 };
+  return { id: crypto.randomUUID(), customerId, type, brand, model, serial, installedAt, interval:Number(interval), lastService:null, serviceStatus:'active', pausedUntil:null, statusNote:'', reminderCustomer:true, reminderCompany:true, doneCount:0 };
 }
 
 const demoState = {
@@ -59,6 +59,7 @@ function load(){
     const old = JSON.parse(localStorage.getItem(KEY));
     const data = old || demoState;
     if(!data.appointments) data.appointments = [];
+    (data.systems||[]).forEach(s=>{ if(!s.serviceStatus) s.serviceStatus='active'; if(s.pausedUntil===undefined) s.pausedUntil=null; if(s.statusNote===undefined) s.statusNote=''; });
     return data;
   }catch(e){
     return demoState;
@@ -82,6 +83,19 @@ function sortedSystems(){ return [...state.systems].sort((a,b)=>nextDate(a).loca
 function appointments(){ return state.appointments || []; }
 function appointmentsOnDate(date){ return appointments().filter(a=>a.date===date).sort((a,b)=>(a.time||'').localeCompare(b.time||'')); }
 function appointmentForSystem(systemId){ return appointments().filter(a=>a.systemId===systemId).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0]; }
+function isSystemActiveForPlanning(s){
+  if(s.serviceStatus === 'declined') return false;
+  if(s.serviceStatus === 'paused'){
+    if(!s.pausedUntil) return false;
+    return daysUntil(s.pausedUntil) <= 0;
+  }
+  return true;
+}
+function statusBadge(s){
+  if(s.serviceStatus === 'declined') return '<span class="status-badge stopped">Geen onderhoud</span>';
+  if(s.serviceStatus === 'paused') return `<span class="status-badge paused">Later${s.pausedUntil ? ': '+fmt(s.pausedUntil) : ''}</span>`;
+  return '<span class="status-badge active">Actief onderhoud</span>';
+}
 
 function dueLabel(s){
   const d=daysUntil(nextDate(s));
@@ -145,8 +159,8 @@ function navBack(){
 document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>nav(b.dataset.route));
 
 function stats(){
-  const dueNow = state.systems.filter(s=>daysUntil(nextDate(s))<=0).length;
-  const dueSoon = state.systems.filter(s=>{const d=daysUntil(nextDate(s)); return d>0 && d<=30;}).length;
+  const dueNow = state.systems.filter(s=>isSystemActiveForPlanning(s) && daysUntil(nextDate(s))<=0).length;
+  const dueSoon = state.systems.filter(s=>{const d=daysUntil(nextDate(s)); return isSystemActiveForPlanning(s) && d>0 && d<=30;}).length;
   return { customers: state.customers.length, systems: state.systems.length, dueNow, dueSoon };
 }
 
@@ -173,13 +187,13 @@ function systemCard(s, compact=false){
       <div class="right-chevron">›</div>
     </div>
     <div class="row between" style="margin-top:10px">
-      <span class="muted">${fmt(nextDate(s))}</span>${dueLabel(s)}
+      <span class="muted">${fmt(nextDate(s))}</span>${isSystemActiveForPlanning(s) ? dueLabel(s) : statusBadge(s)}
     </div>
   </article>`;
 }
 
 function dashboard(){
-  const action = sortedSystems().filter(s=>daysUntil(nextDate(s))<=30).slice(0,4);
+  const action = sortedSystems().filter(s=>isSystemActiveForPlanning(s) && daysUntil(nextDate(s))<=30).slice(0,4);
   app.innerHTML = `<section class="screen">
     ${statCards()}
     <div class="list-header">
@@ -217,7 +231,7 @@ function customers(){
 }
 
 function agenda(){
-  const selectedSystems = sortedSystems().filter(s=>nextDate(s)===selectedAgendaDate);
+  const selectedSystems = sortedSystems().filter(s=>isSystemActiveForPlanning(s) && nextDate(s)===selectedAgendaDate);
   const selectedAppointments = appointmentsOnDate(selectedAgendaDate);
   app.innerHTML = `<section class="screen">
     <article class="card calendar-card">
@@ -252,7 +266,7 @@ function calendarGrid(){
   const daysInMonth=new Date(y,m+1,0).getDate();
   const offset=(first.getDay()+6)%7;
   const weekdays=['Ma','Di','Wo','Do','Vr','Za','Zo'];
-  const eventDates = new Set([...state.systems.map(s=>nextDate(s)), ...appointments().map(a=>a.date)]);
+  const eventDates = new Set([...state.systems.filter(isSystemActiveForPlanning).map(s=>nextDate(s)), ...appointments().map(a=>a.date)]);
   let cells='';
 
   for(let i=0;i<offset;i++) cells += '<button class="calendar-day blank" disabled></button>';
@@ -376,6 +390,7 @@ function detail(id){
       </div>
       <div class="notice" style="margin-top:12px">Reminder naar bedrijf: ${s.reminderCompany?'aan':'uit'} · Reminder naar klant: ${s.reminderCustomer?'aan':'uit'}</div>
       ${appointmentInfo(s)}
+      <div class="notice status-note" style="margin-top:12px"><b>Status</b><br>${statusBadge(s)}${s.statusNote ? '<br>'+esc(s.statusNote) : ''}</div>
       <div class="actions">
         <button class="secondary" onclick="nav('planAppointment',{systemId:'${s.id}',back:'detail'})">📅 Afspraak plannen</button>
         <button class="secondary" onclick="markDone('${s.id}')">✅ Uitgevoerd</button>
@@ -455,16 +470,25 @@ function systemFormFields(s={}){
     <div class="field model-other ${knownModel?'':'show'}"><label>Eigen model</label><input name="modelOther" value="${knownModel?'':esc(model)}" placeholder="Vul eigen model in"></div>
     <div class="field"><label>Serienummer</label><input name="serial" value="${esc(s.serial||'')}" placeholder="FTXG25LW"></div>
     <div class="field"><label>Installatiedatum</label><input name="installedAt" type="date" value="${s.installedAt||''}" required></div>
+    <div class="field"><label>Onderhoudsstatus</label><select name="serviceStatus"><option value="active" ${!s.serviceStatus || s.serviceStatus==='active'?'selected':''}>Actief onderhoud</option><option value="paused" ${s.serviceStatus==='paused'?'selected':''}>Klant wil later</option><option value="declined" ${s.serviceStatus==='declined'?'selected':''}>Klant wil geen onderhoud</option></select></div>
+    <div class="field status-later ${s.serviceStatus==='paused'?'show':''}"><label>Opnieuw benaderen op</label><input name="pausedUntil" type="date" value="${s.pausedUntil||''}"></div>
+    <div class="field"><label>Statusnotitie</label><textarea name="statusNote" rows="2" placeholder="Bijv. klant wil na vakantie gebeld worden">${esc(s.statusNote||'')}</textarea></div>
     <label><input type="checkbox" name="reminderCompany" ${s.reminderCompany!==false?'checked':''}> Herinner mij / mijn bedrijf</label>
     <label><input type="checkbox" name="reminderCustomer" ${s.reminderCustomer!==false?'checked':''}> Herinner ook de klant</label>
   </div>`;
 }
 
+function toggleStatusLater(form){
+  const wrap = form.pausedUntil?.closest('.status-later');
+  if(wrap) wrap.classList.toggle('show', form.serviceStatus?.value === 'paused');
+}
 function wireSystemForm(form, currentModel=''){
   form.brand.onchange=()=>{ toggleOtherBrand(form); refreshModelOptions(form); };
   form.model.onchange=()=>toggleOtherModel(form);
+  if(form.serviceStatus) form.serviceStatus.onchange=()=>toggleStatusLater(form);
   toggleOtherBrand(form);
   refreshModelOptions(form, currentModel);
+  toggleStatusLater(form);
 }
 
 function editCustomer(id){
@@ -519,6 +543,13 @@ function editSystem(id){
     s.serial=f.serial.value.trim();
     s.installedAt=f.installedAt.value;
     s.interval=Number(f.interval.value);
+    s.serviceStatus=f.serviceStatus.value;
+    s.pausedUntil=f.serviceStatus.value==='paused' ? (f.pausedUntil.value || null) : null;
+    s.statusNote=f.statusNote.value.trim();
+    if(s.serviceStatus==='declined') state.appointments=appointments().filter(a=>a.systemId!==s.id);
+    s.serviceStatus=f.serviceStatus.value;
+    s.pausedUntil=f.serviceStatus.value==='paused' ? (f.pausedUntil.value || null) : null;
+    s.statusNote=f.statusNote.value.trim();
     s.reminderCompany=f.reminderCompany.checked;
     s.reminderCustomer=f.reminderCustomer.checked;
     save();
@@ -573,6 +604,9 @@ function newInstall(){
       cid=c.id;
     }
     const s=makeSystem(cid,f.type.value,selectedBrand(f),selectedModel(f),f.serial.value,f.installedAt.value,f.interval.value);
+    s.serviceStatus=f.serviceStatus.value;
+    s.pausedUntil=f.serviceStatus.value==='paused' ? (f.pausedUntil.value || null) : null;
+    s.statusNote=f.statusNote.value.trim();
     s.reminderCompany=f.reminderCompany.checked;
     s.reminderCustomer=f.reminderCustomer.checked;
     state.systems.push(s);
@@ -584,6 +618,7 @@ function newInstall(){
 function planAppointment(systemId){
   const s=systemById(systemId);
   if(!s) return nav('agenda');
+  if(s.serviceStatus==='declined'){ alert('Deze klant wil geen onderhoud. Zet de status eerst terug op actief.'); return nav('detail',{customerId:s.customerId,back:'customers'}); }
   const c=customer(s.customerId)||{};
   const existing = route.appointmentId ? appointments().find(a=>a.id===route.appointmentId) : appointmentForSystem(systemId);
   const dateValue = existing ? existing.date : nextDate(s);

@@ -34,3 +34,12 @@ textarea{resize:vertical}
   font-size:13px;
   line-height:1.35;
 }
+
+
+.status-later{display:none}
+.status-later.show{display:block}
+.status-badge{display:inline-block;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:800;margin-top:4px}
+.status-badge.active{background:#e8f7ee;color:#15803d}
+.status-badge.paused{background:#fff7ed;color:#c2410c}
+.status-badge.stopped{background:#fee2e2;color:#b91c1c}
+.status-note{background:#f8fafc;color:#344054}

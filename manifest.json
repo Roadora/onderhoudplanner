@@ -1,0 +1,8 @@
+{
+  "name":"OnderhoudPlanner",
+  "short_name":"Onderhoud",
+  "display":"standalone",
+  "start_url":".",
+  "theme_color":"#0757c8",
+  "background_color":"#ffffff"
+}

@@ -117,3 +117,6 @@ textarea{resize:vertical}
 .planner-content .muted{
   margin-top:8px;
 }
+
+/* Klant adresvelden + verwijderen v1 */
+button.danger[type="button"]{width:100%;}

@@ -75,6 +75,9 @@ function daysUntil(date){ const a=new Date(); a.setHours(0,0,0,0); const b=new D
 function fmt(date){ return new Date(date+'T12:00:00').toLocaleDateString('nl-NL',{day:'numeric',month:'long',year:'numeric'}); }
 function monthLabel(date){ return date.toLocaleDateString('nl-NL',{month:'long',year:'numeric'}); }
 function esc(v=''){ return String(v).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+function fullAddress(c={}){
+  return [c.address, [c.postalCode, c.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+}
 
 function customer(id){ return state.customers.find(c=>c.id===id); }
 function systemById(id){ return state.systems.find(s=>s.id===id); }
@@ -205,7 +208,7 @@ function systemCard(s, compact=false){
       <div>
         <p class="title">${c.name||'Onbekende klant'}</p>
         <p class="muted">${s.brand} ${s.model}</p>
-        <p class="muted">📍 ${c.address||''}</p>
+        <p class="muted">📍 ${fullAddress(c)}</p>
       </div>
       <div class="right-chevron">›</div>
     </div>
@@ -237,12 +240,12 @@ function customers(){
   const renderList=()=>{
     const q=$('#search').value.toLowerCase();
     $('#customerList').innerHTML = state.customers
-      .filter(c=>c.name.toLowerCase().includes(q)||c.address.toLowerCase().includes(q))
+      .filter(c=>c.name.toLowerCase().includes(q)||fullAddress(c).toLowerCase().includes(q))
       .map(c=>`<article class="card" onclick="nav('detail',{customerId:'${c.id}',back:'customers'})">
         <div class="row between">
           <div>
             <p class="title">${c.name}</p>
-            <p class="muted">${c.address}</p>
+            <p class="muted">${fullAddress(c)}</p>
             <p class="muted">${systemsForCustomer(c.id).length} systeem/systemen</p>${c.memo ? `<p class="muted">📝 ${esc(c.memo).slice(0,55)}${c.memo.length>55?'...':''}</p>` : ''}
           </div>
           <span class="right-chevron">›</span>
@@ -344,7 +347,7 @@ function appointmentDetail(id){
 
   const s = a.systemId ? systemById(a.systemId) : null;
   const c = (a.customerId ? customer(a.customerId) : null) || (s ? customer(s.customerId) : {}) || {};
-  const mapQuery = encodeURIComponent(c.address || '');
+  const mapQuery = encodeURIComponent(fullAddress(c) || '');
 
   app.innerHTML = `<section class="screen appointment-detail-screen">
     <article class="appointment-hero-card">
@@ -360,7 +363,7 @@ function appointmentDetail(id){
 
     <article class="card">
       <p class="title">Klantgegevens</p>
-      <p class="muted">📍 ${c.address || 'Geen adres'}</p>
+      <p class="muted">📍 ${fullAddress(c) || 'Geen adres'}</p>
       <p class="muted">☎ ${c.phone || 'Geen telefoon'}</p>
       <p class="muted">✉ ${c.email || 'Geen e-mail'}</p>
       ${c.memo ? `<div class="customer-memo">📝 ${esc(c.memo)}</div>` : ''}
@@ -415,7 +418,7 @@ function dayPlan(date){
         <div class="planner-content">
           <p class="title">${appointmentIcon(a.type)} ${appointmentTitle(a.type||'onderhoud')}</p>
           <p class="planner-name">${workLine}</p>
-          <p class="muted">📍 ${c.address||'Geen adres ingevuld'}</p>
+          <p class="muted">📍 ${fullAddress(c) || 'Geen adres ingevuld'}</p>
         </div>
       </article>`;
     }).join('') || '<div class="card empty">Geen afspraken op deze dag.</div>'}
@@ -460,7 +463,7 @@ function detail(id){
             <p class="title">${c.name} <span class="pill">Actief</span></p>
             <button class="edit-btn" onclick="event.stopPropagation(); nav('editCustomer',{customerId:'${c.id}',back:'detail'})">✏️</button>
           </div>
-          <p class="muted">${c.address}</p>
+          <p class="muted">${fullAddress(c)}</p>
           <p class="muted">☎ ${c.phone}</p>
           <p class="muted">✉ ${c.email}</p>
           ${c.memo ? `<div class="customer-memo">📝 ${esc(c.memo)}</div>` : ''}
@@ -614,7 +617,7 @@ function editCustomer(id){
       <article class="card form">
         <h2>Klant bewerken</h2>
         <div class="field"><label>Klantnaam</label><input name="name" value="${esc(c.name)}" required></div>
-        <div class="field"><label>Adres</label><input name="address" value="${esc(c.address)}"></div>
+        <div class="field"><label>Straat + huisnummer</label><input name="address" value="${esc(c.address)}"></div><div class="two"><div class="field"><label>Postcode</label><input name="postalCode" value="${esc(c.postalCode||'')}"></div><div class="field"><label>Plaats</label><input name="city" value="${esc(c.city||'')}"></div></div>
         <div class="two">
           <div class="field"><label>Telefoon</label><input name="phone" value="${esc(c.phone)}"></div>
           <div class="field"><label>E-mail</label><input name="email" value="${esc(c.email)}"></div>
@@ -625,7 +628,7 @@ function editCustomer(id){
         <h2>Geplaatste systemen</h2>
         ${systems.map(s=>`<div class="edit-system-card"><div class="row between"><div><p class="title">${s.type==='warmtepomp'?'♨️ Warmtepomp':'❄️ Airco'}</p><p class="muted">${s.brand} ${s.model}</p><p class="muted">Volgend onderhoud: ${fmt(nextDate(s))}</p></div><button type="button" class="edit-btn" onclick="nav('editSystem',{systemId:'${s.id}',back:'editCustomer'})">✏️</button></div></div>`).join('') || '<p class="muted">Nog geen systemen.</p>'}
       </article>
-      <button class="primary" type="submit">Klant opslaan</button>
+      <button class="primary" type="submit">Klant opslaan</button><button class="danger" type="button" onclick="deleteCustomer(\'${c.id}\')">🗑 Klant verwijderen</button>
     </form>
   </section>`;
 
@@ -634,6 +637,8 @@ function editCustomer(id){
     e.preventDefault();
     c.name=f.name.value.trim() || c.name;
     c.address=f.address.value.trim();
+    c.postalCode=f.postalCode.value.trim();
+    c.city=f.city.value.trim();
     c.phone=f.phone.value.trim();
     c.email=f.email.value.trim();
     c.memo=f.memo.value.trim();
@@ -685,7 +690,7 @@ function newInstall(){
           </select>
         </div>
         <div class="field"><label>Klantnaam</label><input name="name" placeholder="Bijv. Fam. Jansen"></div>
-        <div class="field"><label>Adres</label><input name="address" placeholder="Straat, plaats"></div>
+        <div class="field"><label>Straat + huisnummer</label><input name="address" placeholder="Bijv. Kerkstraat 12"></div><div class="two"><div class="field"><label>Postcode</label><input name="postalCode" placeholder="3341 AB"></div><div class="field"><label>Plaats</label><input name="city" placeholder="Hendrik-Ido-Ambacht"></div></div>
         <div class="two">
           <div class="field"><label>Telefoon</label><input name="phone" placeholder="06..."></div>
           <div class="field"><label>E-mail</label><input name="email" placeholder="mail@..."></div>
@@ -700,7 +705,7 @@ function newInstall(){
   const f=$('#newForm');
   const fill=()=>{
     const c=customer(f.existing.value);
-    ['name','address','phone','email','memo'].forEach(k=>{
+    ['name','address','postalCode','city','phone','email','memo'].forEach(k=>{
       f[k].value=c?c[k]:'';
       f[k].disabled=!!c;
     });
@@ -713,7 +718,7 @@ function newInstall(){
     e.preventDefault();
     let cid=f.existing.value;
     if(!cid){
-      const c={id:crypto.randomUUID(),name:f.name.value||'Nieuwe klant',address:f.address.value,phone:f.phone.value,email:f.email.value,memo:f.memo ? f.memo.value.trim() : ''};
+      const c={id:crypto.randomUUID(),name:f.name.value||'Nieuwe klant',address:f.address.value,postalCode:f.postalCode.value,city:f.city.value,phone:f.phone.value,email:f.email.value,memo:f.memo ? f.memo.value.trim() : ''};
       state.customers.push(c);
       cid=c.id;
     }
@@ -795,6 +800,8 @@ function newAppointment(){
         id:crypto.randomUUID(),
         name:f.newName.value.trim() || 'Nieuwe klant',
         address:f.newAddress.value.trim(),
+        postalCode:f.newPostalCode.value.trim(),
+        city:f.newCity.value.trim(),
         phone:f.newPhone.value.trim(),
         email:f.newEmail.value.trim(),
         memo:f.newMemo ? f.newMemo.value.trim() : ''
@@ -848,7 +855,7 @@ function planAppointment(systemId){
       <article class="card">
         <p class="title">${c.name}</p>
         <p class="muted">${s.brand} ${s.model}</p>
-        <p class="muted">📍 ${c.address||''}</p>
+        <p class="muted">📍 ${fullAddress(c)}</p>
       </article>
       <article class="card form">
         <h2>Afspraak</h2>
@@ -921,5 +928,16 @@ function resetDemo(){
   nav('dashboard');
 }
 
-Object.assign(window,{nav,changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,resetDemo,deleteAppointment,deleteGenericAppointment});
+
+function deleteCustomer(id){
+  if(!confirm('Klant verwijderen? Alle gekoppelde systemen en afspraken worden ook verwijderd.')) return;
+  const systemIds = state.systems.filter(s=>s.customerId===id).map(s=>s.id);
+  state.systems = state.systems.filter(s=>s.customerId!==id);
+  state.appointments = appointments().filter(a=>a.customerId!==id && !systemIds.includes(a.systemId));
+  state.customers = state.customers.filter(c=>c.id!==id);
+  save();
+  nav('customers');
+}
+
+Object.assign(window,{nav,changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,deleteCustomer,resetDemo,deleteAppointment,deleteGenericAppointment});
 render();

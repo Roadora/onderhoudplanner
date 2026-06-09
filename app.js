@@ -169,6 +169,7 @@ function render(){
 function navBack(){
   if(route.name==='appointmentDetail') return nav('dayPlan',{date:route.date || todayKey(),back:'agenda'});
   if(route.name==='appointmentDetail') return nav('dayPlan',{date:route.date || todayKey(),back:'agenda'});
+  if(route.name==='appointmentDetail') return nav('dayPlan',{date:route.date || todayKey(),back:'agenda'});
   if(route.name==='detail') return nav(route.back || 'dashboard');
   if(route.name==='editCustomer') return nav('detail',{customerId:route.customerId,back:'customers'});
   if(route.name==='editSystem' || route.name==='planAppointment'){
@@ -395,6 +396,7 @@ function appointmentDetail(id){
   </section>`;
 }
 
+
 function dayPlan(date){
   const items = appointmentsOnDate(date);
   app.innerHTML = `<section class="screen dayplan-screen">
@@ -407,11 +409,12 @@ function dayPlan(date){
     ${items.map(a=>{
       const s=a.systemId ? systemById(a.systemId) : null;
       const c=(a.customerId ? customer(a.customerId) : null) || (s ? customer(s.customerId) : {}) || {};
-      return `<article class="planner-card" onclick="nav('appointmentDetail',{appointmentId:'${a.id}',date:''+date+'',back:'dayPlan'})">
+      const workLine = s ? s.brand+' '+s.model : (a.note || 'Geen systeem ingevuld');
+      return `<article class="planner-card" onclick="nav('appointmentDetail',{appointmentId:'${a.id}',date:'${date}',back:'dayPlan'})">
         <div class="planner-time">${a.time||'--:--'}</div>
         <div class="planner-content">
           <p class="title">${appointmentIcon(a.type)} ${appointmentTitle(a.type||'onderhoud')}</p>
-          <p class="planner-name">${s ? s.brand+' '+s.model : (a.note||'Geen systeem ingevuld')}</p>
+          <p class="planner-name">${workLine}</p>
           <p class="muted">📍 ${c.address||'Geen adres ingevuld'}</p>
         </div>
       </article>`;

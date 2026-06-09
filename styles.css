@@ -78,3 +78,42 @@ textarea{resize:vertical}
 .dayplan-back{
   padding:0;
 }
+
+
+/* Afspraakdetails v1 */
+.appointment-detail-screen{
+  margin-top:-42px;
+}
+.appointment-hero-card{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:22px;
+  padding:16px;
+  margin:0 0 12px;
+  box-shadow:0 8px 22px rgba(16,24,40,.06);
+}
+.appointment-hero-card h2{
+  margin:6px 0 4px;
+}
+.appointment-customer-name{
+  margin:0;
+  font-size:18px;
+  font-weight:900;
+}
+.nav-full{
+  display:block;
+  margin-top:10px;
+}
+.appointment-note{
+  background:#fff7ed;
+  color:#9a3412;
+}
+
+
+/* Dagplanning afspraakkaart clean v1 */
+.planner-content .title{
+  margin-bottom:8px;
+}
+.planner-content .muted{
+  margin-top:8px;
+}

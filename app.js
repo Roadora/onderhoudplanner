@@ -146,7 +146,7 @@ function render(){
   const titles = {
     dashboard:'Dashboard', customers:'Klanten', agenda:'Agenda', settings:'Instellingen',
     new:'Nieuwe installatie', detail:'Klantdetail', editCustomer:'Klant bewerken',
-    editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', dayPlan:'Dagplanning'
+    editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails'
   };
   pageTitle.textContent = titles[route.name] || 'OnderhoudPlanner';
 
@@ -161,11 +161,13 @@ function render(){
   if(route.name==='planAppointment') planAppointment(route.systemId);
   if(route.name==='newAppointment') newAppointment();
   if(route.name==='dayPlan') dayPlan(route.date);
+  if(route.name==='appointmentDetail') appointmentDetail(route.appointmentId);
 
   updateFab();
 }
 
 function navBack(){
+  if(route.name==='appointmentDetail') return nav('dayPlan',{date:route.date || todayKey(),back:'agenda'});
   if(route.name==='detail') return nav(route.back || 'dashboard');
   if(route.name==='editCustomer') return nav('detail',{customerId:route.customerId,back:'customers'});
   if(route.name==='editSystem' || route.name==='planAppointment'){
@@ -333,6 +335,65 @@ function appointmentCard(a){
 }
 
 
+
+function appointmentDetail(id){
+  const a = appointments().find(x=>x.id===id);
+  if(!a) return nav('agenda');
+
+  const s = a.systemId ? systemById(a.systemId) : null;
+  const c = (a.customerId ? customer(a.customerId) : null) || (s ? customer(s.customerId) : {}) || {};
+  const mapQuery = encodeURIComponent(c.address || '');
+
+  app.innerHTML = `<section class="screen appointment-detail-screen">
+    <article class="appointment-hero-card">
+      <div class="row between">
+        <div>
+          <p class="muted">${fmt(a.date)} · ${a.time || 'Tijd onbekend'}</p>
+          <h2>${appointmentIcon(a.type)} ${appointmentTitle(a.type || 'onderhoud')}</h2>
+          <p class="appointment-customer-name">${c.name || 'Geen klant gekozen'}</p>
+        </div>
+        <span class="status-badge active">Gepland</span>
+      </div>
+    </article>
+
+    <article class="card">
+      <p class="title">Klantgegevens</p>
+      <p class="muted">📍 ${c.address || 'Geen adres'}</p>
+      <p class="muted">☎ ${c.phone || 'Geen telefoon'}</p>
+      <p class="muted">✉ ${c.email || 'Geen e-mail'}</p>
+      ${c.memo ? `<div class="customer-memo">📝 ${esc(c.memo)}</div>` : ''}
+      <div class="actions">
+        <a class="secondary" href="tel:${c.phone || ''}">📞 Bel</a>
+        <a class="secondary whatsapp" href="${whatsappLink(c)}">💬 WhatsApp</a>
+      </div>
+      <a class="secondary nav-full" target="_blank" href="https://www.google.com/maps/search/?api=1&query=${mapQuery}">📍 Navigeer</a>
+    </article>
+
+    <article class="card">
+      <p class="title">Afspraak</p>
+      <div class="detail-grid" style="margin-top:12px">
+        <div class="mini"><span>Type</span><b>${appointmentTitle(a.type || 'onderhoud')}</b></div>
+        <div class="mini"><span>Tijd</span><b>${a.time || '-'}</b></div>
+        <div class="mini"><span>Datum</span><b>${fmt(a.date)}</b></div>
+        <div class="mini"><span>Status</span><b>Gepland</b></div>
+      </div>
+      ${a.note ? `<div class="notice appointment-note" style="margin-top:12px"><b>Notitie</b><br>${esc(a.note)}</div>` : ''}
+    </article>
+
+    ${s ? `<article class="card">
+      <p class="title">Systeem</p>
+      <p class="muted">${s.type==='warmtepomp'?'Warmtepomp':'Airco'} · ${s.brand} ${s.model}</p>
+      <div class="detail-grid" style="margin-top:12px">
+        <div class="mini"><span>Serienummer</span><b>${s.serial || '-'}</b></div>
+        <div class="mini"><span>Interval</span><b>${s.interval} maanden</b></div>
+      </div>
+    </article>` : ''}
+
+    <button class="primary" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'appointmentDetail'})">✏️ Afspraak bewerken</button>
+    <button class="danger" style="width:100%;margin-top:10px" onclick="deleteGenericAppointment('${a.id}')">🗑 Afspraak verwijderen</button>
+  </section>`;
+}
+
 function dayPlan(date){
   const items = appointmentsOnDate(date);
   app.innerHTML = `<section class="screen dayplan-screen">
@@ -345,20 +406,12 @@ function dayPlan(date){
     ${items.map(a=>{
       const s=a.systemId ? systemById(a.systemId) : null;
       const c=(a.customerId ? customer(a.customerId) : null) || (s ? customer(s.customerId) : {}) || {};
-      return `<article class="planner-card" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'dayPlan',date:''+date+''})">
+      return `<article class="planner-card" onclick="nav('appointmentDetail',{appointmentId:'${a.id}',date:''+date+'',back:'dayPlan'})">
         <div class="planner-time">${a.time||'--:--'}</div>
         <div class="planner-content">
-          <div class="row between">
-            <p class="title">${appointmentTitle(a.type||'onderhoud')}</p>
-            <span class="status-badge active">Gepland</span>
-          </div>
-          <p class="planner-name">${c.name||'Geen klant'}</p>
-          <p class="muted">${s ? s.brand+' '+s.model : ''}</p>
-          <p class="muted">📍 ${c.address||''}</p>
-          <div class="actions">
-            <a class="secondary" href="tel:${c.phone||''}">📞 Bel</a>
-            <a class="secondary whatsapp" href="${whatsappLink(c)}">💬 WhatsApp</a>
-          </div>
+          <p class="title">${appointmentIcon(a.type)} ${appointmentTitle(a.type||'onderhoud')}</p>
+          <p class="planner-name">${s ? s.brand+' '+s.model : (a.note||'Geen systeem ingevuld')}</p>
+          <p class="muted">📍 ${c.address||'Geen adres ingevuld'}</p>
         </div>
       </article>`;
     }).join('') || '<div class="card empty">Geen afspraken op deze dag.</div>'}

@@ -120,3 +120,5 @@ textarea{resize:vertical}
 
 /* Klant adresvelden + verwijderen v1 */
 button.danger[type="button"]{width:100%;}
+
+.dashboard-greeting{font-size:24px;margin:0 0 6px}

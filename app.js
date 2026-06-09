@@ -184,6 +184,13 @@ function navBack(){
 
 document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>nav(b.dataset.route));
 
+function dashboardGreeting(){
+  const h=new Date().getHours();
+  if(h>=5 && h<12) return 'Goedemorgen Ike 👋';
+  if(h>=12 && h<18) return 'Goedemiddag Ike 👋';
+  return 'Goedenavond Ike 👋';
+}
+
 function stats(){
   const dueNow = state.systems.filter(s=>isSystemActiveForPlanning(s) && daysUntil(nextDate(s))<=0).length;
   const dueSoon = state.systems.filter(s=>{const d=daysUntil(nextDate(s)); return isSystemActiveForPlanning(s) && d>0 && d<=30;}).length;
@@ -221,6 +228,10 @@ function systemCard(s, compact=false){
 function dashboard(){
   const action = sortedSystems().filter(s=>isSystemActiveForPlanning(s) && daysUntil(nextDate(s))<=30).slice(0,4);
   app.innerHTML = `<section class="screen">
+    <article class="card">
+      <p class="title dashboard-greeting">${dashboardGreeting()}</p>
+      <p class="muted">Hier is jouw planning voor vandaag.</p>
+    </article>
     ${statCards()}
     <div class="list-header">
       <h2>Komende onderhoudsbeurten</h2>

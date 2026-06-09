@@ -38,8 +38,8 @@ const MODEL_OPTIONS = {
   'Weishaupt':['Biblock','Aeroblock','Anders...']
 };
 
-function makeSystem(customerId,type,brand,model,serial,installedAt,interval){
-  return { id: crypto.randomUUID(), customerId, type, brand, model, serial, installedAt, interval:Number(interval), lastService:null, serviceStatus:'active', pausedUntil:null, statusNote:'', reminderCustomer:true, reminderCompany:true, doneCount:0 };
+function makeSystem(customerId,type,brand,model,serial,installedAt,interval,installTime='09:00'){
+  return { id: crypto.randomUUID(), customerId, type, brand, model, serial, installedAt, installTime, interval:Number(interval), lastService:null, serviceStatus:'active', pausedUntil:null, statusNote:'', reminderCustomer:true, reminderCompany:true, doneCount:0 };
 }
 
 const demoState = {
@@ -102,6 +102,27 @@ function appointmentTitle(type){
 function appointmentsForCustomer(customerId){
   return appointments().filter(a=>a.customerId===customerId || (a.systemId && systemById(a.systemId)?.customerId===customerId));
 }
+
+function autoCreatePlacementAppointment(system, customerId){
+  if(!system || !system.installedAt) return;
+  if(daysUntil(system.installedAt) < 0) return;
+  const exists = appointments().some(a =>
+    a.systemId === system.id &&
+    a.type === 'plaatsing' &&
+    a.date === system.installedAt
+  );
+  if(exists) return;
+  state.appointments.push({
+    id: crypto.randomUUID(),
+    type: 'plaatsing',
+    customerId,
+    systemId: system.id,
+    date: system.installedAt,
+    time: system.installTime || '09:00',
+    note: `Plaatsing ${system.brand} ${system.model}`
+  });
+}
+
 
 function isSystemActiveForPlanning(s){
   if(s.serviceStatus === 'declined') return false;
@@ -184,13 +205,6 @@ function navBack(){
 
 document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>nav(b.dataset.route));
 
-function dashboardGreeting(){
-  const h=new Date().getHours();
-  if(h>=5 && h<12) return 'Goedemorgen Ike 👋';
-  if(h>=12 && h<18) return 'Goedemiddag Ike 👋';
-  return 'Goedenavond Ike 👋';
-}
-
 function stats(){
   const dueNow = state.systems.filter(s=>isSystemActiveForPlanning(s) && daysUntil(nextDate(s))<=0).length;
   const dueSoon = state.systems.filter(s=>{const d=daysUntil(nextDate(s)); return isSystemActiveForPlanning(s) && d>0 && d<=30;}).length;
@@ -228,10 +242,6 @@ function systemCard(s, compact=false){
 function dashboard(){
   const action = sortedSystems().filter(s=>isSystemActiveForPlanning(s) && daysUntil(nextDate(s))<=30).slice(0,4);
   app.innerHTML = `<section class="screen">
-    <article class="card">
-      <p class="title dashboard-greeting">${dashboardGreeting()}</p>
-      <p class="muted">Hier is jouw planning voor vandaag.</p>
-    </article>
     ${statCards()}
     <div class="list-header">
       <h2>Komende onderhoudsbeurten</h2>
@@ -574,7 +584,7 @@ function systemFormFields(s={}){
     <div class="field"><label>Model</label><select name="model">${modelSelectOptions(brand, model)}</select></div>
     <div class="field model-other ${knownModel?'':'show'}"><label>Eigen model</label><input name="modelOther" value="${knownModel?'':esc(model)}" placeholder="Vul eigen model in"></div>
     <div class="field"><label>Serienummer</label><input name="serial" value="${esc(s.serial||'')}" placeholder="FTXG25LW"></div>
-    <div class="field"><label>Installatiedatum</label><input name="installedAt" type="date" value="${s.installedAt||''}" required></div>
+    <div class="two"><div class="field"><label>Installatiedatum</label><input name="installedAt" type="date" value="${s.installedAt||''}" required></div><div class="field"><label>Tijd plaatsing</label><input name="installTime" type="time" value="${s.installTime||'09:00'}"></div></div><p class="field-hint">Ligt deze datum vandaag of in de toekomst? Dan komt de plaatsing automatisch in de agenda.</p>
     <div class="field"><label>Onderhoudsstatus</label><select name="serviceStatus"><option value="active" ${!s.serviceStatus || s.serviceStatus==='active'?'selected':''}>Actief onderhoud</option><option value="paused" ${s.serviceStatus==='paused'?'selected':''}>Klant wil later</option><option value="declined" ${s.serviceStatus==='declined'?'selected':''}>Klant wil geen onderhoud</option></select></div>
     <div class="field">
       <label>Interval</label>
@@ -671,6 +681,7 @@ function editSystem(id){
     s.model=selectedModel(f);
     s.serial=f.serial.value.trim();
     s.installedAt=f.installedAt.value;
+    s.installTime=f.installTime ? (f.installTime.value || '09:00') : (s.installTime || '09:00');
     s.serviceStatus=f.serviceStatus.value;
     s.interval=s.serviceStatus==='declined' ? 0 : Number(f.interval.value);
     s.pausedUntil=f.serviceStatus.value==='paused' ? (f.pausedUntil.value || null) : null;
@@ -733,7 +744,7 @@ function newInstall(){
       state.customers.push(c);
       cid=c.id;
     }
-    const s=makeSystem(cid,f.type.value,selectedBrand(f),selectedModel(f),f.serial.value,f.installedAt.value,f.interval.value);
+    const s=makeSystem(cid,f.type.value,selectedBrand(f),selectedModel(f),f.serial.value,f.installedAt.value,f.interval.value,f.installTime.value || '09:00');
     s.serviceStatus=f.serviceStatus.value;
     s.interval=s.serviceStatus==='declined' ? 0 : Number(f.interval.value);
     s.pausedUntil=f.serviceStatus.value==='paused' ? (f.pausedUntil.value || null) : null;
@@ -741,6 +752,7 @@ function newInstall(){
     s.reminderCompany=f.reminderCompany.checked;
     s.reminderCustomer=f.reminderCustomer.checked;
     state.systems.push(s);
+    autoCreatePlacementAppointment(s, cid);
     save();
     nav('detail',{customerId:cid,back:'customers'});
   };

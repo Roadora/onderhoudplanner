@@ -115,6 +115,7 @@ function autoCreatePlacementAppointment(system, customerId){
   state.appointments.push({
     id: crypto.randomUUID(),
     type: 'plaatsing',
+    status: 'gepland',
     customerId,
     systemId: system.id,
     date: system.installedAt,
@@ -123,6 +124,57 @@ function autoCreatePlacementAppointment(system, customerId){
   });
 }
 
+
+
+function hasAppointment(systemId, type, date){
+  return appointments().some(a => a.systemId === systemId && a.type === type && a.date === date);
+}
+function autoCreateMaintenanceAppointment(system, customerId, baseDate=null){
+  if(!system || system.serviceStatus === 'declined') return;
+  const interval = Number(system.interval || 0);
+  if(!interval || interval <= 0) return;
+  const startDate = baseDate || system.lastService || system.installedAt;
+  if(!startDate) return;
+  const maintenanceDate = addMonths(startDate, interval);
+  if(hasAppointment(system.id, 'onderhoud', maintenanceDate)) return;
+  state.appointments.push({
+    id: crypto.randomUUID(),
+    type: 'onderhoud',
+    status: 'gepland',
+    customerId,
+    systemId: system.id,
+    date: maintenanceDate,
+    time: '09:00',
+    note: `Onderhoud ${system.brand} ${system.model}`
+  });
+}
+function appointmentStatusBadge(a){
+  if(a.status === 'onderweg') return '<span class="status-badge paused">Onderweg</span>';
+  if(a.status === 'uitgevoerd') return '<span class="status-badge active">Uitgevoerd</span>';
+  return '${appointmentStatusBadge(a)}';
+}
+function setAppointmentStatus(id, status){
+  const a = appointments().find(x=>x.id===id);
+  if(!a) return;
+  a.status = status;
+  save();
+  appointmentDetail(id);
+}
+function completeAppointment(id){
+  const a = appointments().find(x=>x.id===id);
+  if(!a) return;
+  a.status = 'uitgevoerd';
+  if(a.systemId && a.type === 'onderhoud'){
+    const s = systemById(a.systemId);
+    if(s){
+      s.lastService = todayKey();
+      s.doneCount = (s.doneCount || 0) + 1;
+      autoCreateMaintenanceAppointment(s, s.customerId, todayKey());
+    }
+  }
+  save();
+  nav('dayPlan',{date:a.date,back:'agenda'});
+}
 
 function isSystemActiveForPlanning(s){
   if(s.serviceStatus === 'declined') return false;
@@ -413,7 +465,7 @@ function appointmentDetail(id){
         <div class="mini"><span>Type</span><b>${appointmentTitle(a.type || 'onderhoud')}</b></div>
         <div class="mini"><span>Tijd</span><b>${a.time || '-'}</b></div>
         <div class="mini"><span>Datum</span><b>${fmt(a.date)}</b></div>
-        <div class="mini"><span>Status</span><b>Gepland</b></div>
+        <div class="mini"><span>Status</span><b>${a.status==='onderweg'?'Onderweg':a.status==='uitgevoerd'?'Uitgevoerd':'Gepland'}</b></div>
       </div>
       ${a.note ? `<div class="notice appointment-note" style="margin-top:12px"><b>Notitie</b><br>${esc(a.note)}</div>` : ''}
     </article>
@@ -427,7 +479,7 @@ function appointmentDetail(id){
       </div>
     </article>` : ''}
 
-    <button class="primary" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'appointmentDetail'})">✏️ Afspraak bewerken</button>
+    <div class="detail-action-grid"><button class="secondary" onclick="setAppointmentStatus('${a.id}','onderweg')">🚗 Onderweg</button><button class="primary" onclick="completeAppointment('${a.id}')">✅ Uitgevoerd</button></div><button class="primary" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'appointmentDetail'})">✏️ Afspraak bewerken</button>
     <button class="danger" style="width:100%;margin-top:10px" onclick="deleteGenericAppointment('${a.id}')">🗑 Afspraak verwijderen</button>
   </section>`;
 }
@@ -449,7 +501,7 @@ function dayPlan(date){
       return `<article class="planner-card" onclick="nav('appointmentDetail',{appointmentId:'${a.id}',date:'${date}',back:'dayPlan'})">
         <div class="planner-time">${a.time||'--:--'}</div>
         <div class="planner-content">
-          <p class="title">${appointmentIcon(a.type)} ${appointmentTitle(a.type||'onderhoud')}</p>
+          <div class="row between"><p class="title">${appointmentIcon(a.type)} ${appointmentTitle(a.type||'onderhoud')}</p>${appointmentStatusBadge(a)}</div>
           <p class="planner-name">${workLine}</p>
           <p class="muted">📍 ${fullAddress(c) || 'Geen adres ingevuld'}</p>
         </div>
@@ -765,6 +817,7 @@ function newInstall(){
     s.reminderCustomer=f.reminderCustomer.checked;
     state.systems.push(s);
     autoCreatePlacementAppointment(s, cid);
+    autoCreateMaintenanceAppointment(s, cid);
     save();
     nav('detail',{customerId:cid,back:'customers'});
   };
@@ -855,6 +908,7 @@ function newAppointment(){
       state.appointments.push({
         id:crypto.randomUUID(),
         type:f.type.value,
+        status:'gepland',
         customerId:appointmentCustomerId,
         systemId:null,
         date:f.date.value,
@@ -911,7 +965,7 @@ function planAppointment(systemId){
       existing.time=f.time.value;
       existing.note=f.note.value.trim();
     }else{
-      state.appointments.push({id:crypto.randomUUID(),type:'onderhoud',customerId:s.customerId,systemId,date:f.date.value,time:f.time.value,note:f.note.value.trim()});
+      state.appointments.push({id:crypto.randomUUID(),type:'onderhoud',status:'gepland',customerId:s.customerId,systemId,date:f.date.value,time:f.time.value,note:f.note.value.trim()});
     }
     save();
     selectedAgendaDate=f.date.value;
@@ -974,5 +1028,5 @@ function deleteCustomer(id){
   nav('customers');
 }
 
-Object.assign(window,{nav,changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,deleteCustomer,resetDemo,deleteAppointment,deleteGenericAppointment});
+Object.assign(window,{nav,changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,deleteCustomer,setAppointmentStatus,completeAppointment,resetDemo,deleteAppointment,deleteGenericAppointment});
 render();

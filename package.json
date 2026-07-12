@@ -1,7 +1,7 @@
 {
   "name": "onderhoudplanner",
   "private": true,
-  "version": "0.8.1b",
+  "version": "0.8.1c",
   "type": "module",
   "scripts": {
     "dev": "vite",

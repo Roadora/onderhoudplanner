@@ -1,3 +1,7 @@
+# OnderhoudPlanner v0.8.1c — Vercel public npm fix
+
+Deze versie herstelt de dependency-installatie op Vercel. Het package-lockbestand verwijst uitsluitend naar de openbare npm-registry en Vercel gebruikt `npm ci`.
+
 # OnderhoudPlanner v0.8.1a — Accounts + Vercel Node 20-fix
 
 Deze versie voegt echte bedrijfsaccounts toe met Supabase Auth. Zonder geldig en bevestigd account blijft het onderhoudsdashboard afgesloten.

@@ -1,5 +1,6 @@
 import { APP_VERSION, STORAGE_KEY as KEY, LEGACY_STORAGE_KEYS as LEGACY_KEYS } from './config.js';
 import { localRepository } from './data/local-repository.js';
+import { getAccountContext } from './account-context.js';
 
 const $ = (s) => document.querySelector(s);
 const field = (form, name) => form?.elements?.namedItem(name) || null;
@@ -8,6 +9,7 @@ const pageTitle = $('#pageTitle');
 const backBtn = $('#backBtn');
 const fabAdd = $('#fabAdd');
 const notifyBtn = $('#notifyBtn');
+const accountBtn = $('#accountBtn');
 
 const BRAND_OPTIONS = [
   'Daikin','Mitsubishi Electric','LG','Samsung','Panasonic','Toshiba','Fujitsu','Hitachi',
@@ -74,6 +76,17 @@ const demoState = {
 };
 
 let state = load();
+const accountContext = getAccountContext();
+if(accountContext){
+  const accountCompany = accountContext.organization?.name || '';
+  const accountName = accountContext.profile?.full_name || '';
+  if(accountCompany && (!state.settings.companyName || state.settings.companyName === DEFAULT_SETTINGS.companyName)){
+    state.settings.companyName = accountCompany;
+    state.company = accountCompany;
+  }
+  if(accountName && !state.settings.contactName) state.settings.contactName = accountName;
+  save();
+}
 let route = {name:'dashboard'};
 let calendarMonth = new Date();
 let selectedAgendaDate = todayKey();
@@ -262,7 +275,7 @@ function render(){
   backBtn.onclick = () => navBack();
 
   const titles = {
-    dashboard:'Dashboard', customers:'Klanten', agenda:'Agenda', settings:'Instellingen',
+    dashboard:'Dashboard', customers:'Klanten', agenda:'Agenda', settings:'Instellingen', account:'Bedrijfsaccount',
     new:'Nieuwe installatie', detail:'Klantdetail', editCustomer:'Klant bewerken',
     editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails', notifications:'Actielijst'
   };
@@ -272,6 +285,7 @@ function render(){
   if(route.name==='customers') customers();
   if(route.name==='agenda') agenda();
   if(route.name==='settings') settings();
+  if(route.name==='account') accountPage();
   if(route.name==='new') newInstall();
   if(route.name==='detail') detail(route.customerId);
   if(route.name==='editCustomer') editCustomer(route.customerId);
@@ -287,7 +301,7 @@ function render(){
 
 function navBack(){
   if(route.name==='appointmentDetail') return nav('dayPlan',{date:route.date || todayKey(),back:'agenda'});
-  if(route.name==='notifications') return nav('dashboard');
+  if(route.name==='notifications' || route.name==='account') return nav('dashboard');
   if(route.name==='detail') return nav(route.back || 'dashboard');
   if(route.name==='editCustomer') return nav('detail',{customerId:route.customerId,back:'customers'});
   if(route.name==='editSystem' || route.name==='planAppointment'){
@@ -298,6 +312,12 @@ function navBack(){
 }
 
 document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>nav(b.dataset.route));
+if(accountBtn){
+  const account=getAccountContext();
+  const initials=(account?.organization?.name || 'OP').split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase();
+  accountBtn.textContent=initials || 'OP';
+  accountBtn.onclick=()=>nav('account');
+}
 
 function dashboardGreeting(){
   const h=new Date().getHours();
@@ -1126,10 +1146,21 @@ function deleteSystem(id){
 
 function settings(){
   const lastUpdate=state.updatedAt ? new Date(state.updatedAt).toLocaleString('nl-NL') : 'Nog niet opgeslagen';
+  const account=getAccountContext();
   app.innerHTML = `<section class="screen">
     <article class="card pilot-banner">
       <p class="title">${APP_VERSION}</p>
-      <p class="muted">Technische basis: deze versie draait via Vite en bewaart gegevens voorlopig nog lokaal. Accounts en beveiligde cloudopslag worden in de volgende stap aangesloten.</p>
+      <p class="muted">Je account en bedrijfsomgeving zijn beveiligd via Supabase. Klanten, installaties en afspraken worden in v0.8.1 nog tijdelijk lokaal en per bedrijfsaccount bewaard; cloudopslag volgt in v0.8.2.</p>
+    </article>
+
+    <article class="card account-summary-card">
+      <div class="row between">
+        <div>
+          <p class="title">${esc(account?.organization?.name || state.settings.companyName)}</p>
+          <p class="muted">${esc(account?.user?.email || '')}</p>
+        </div>
+        <button class="smallbtn" type="button" onclick="nav('account')">Account</button>
+      </div>
     </article>
 
     <form class="form" id="settingsForm">
@@ -1187,7 +1218,7 @@ function settings(){
   </section>`;
 
   const f=$('#settingsForm');
-  f.onsubmit=(e)=>{
+  f.onsubmit=async(e)=>{
     e.preventDefault();
     state.settings.companyName=field(f,'companyName').value.trim()||'Onderhoudsbedrijf';
     state.settings.contactName=field(f,'contactName').value.trim();
@@ -1196,9 +1227,55 @@ function settings(){
     state.settings.defaultInterval=Number(field(f,'defaultInterval').value||12);
     state.settings.whatsappTemplate=field(f,'whatsappTemplate').value.trim()||DEFAULT_SETTINGS.whatsappTemplate;
     save();
-    alert('Instellingen opgeslagen.');
+    try{
+      await window.maintenanceAccount?.updateOrganizationName?.(state.settings.companyName);
+      await window.maintenanceAccount?.updateProfileName?.(state.settings.contactName);
+      if(accountBtn){
+        const initials=state.settings.companyName.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase();
+        accountBtn.textContent=initials||'OP';
+      }
+      alert('Instellingen en bedrijfsaccount opgeslagen.');
+    }catch(error){
+      console.error('Bedrijfsaccount bijwerken mislukt',error);
+      alert('De lokale instellingen zijn opgeslagen, maar het bedrijfsaccount kon niet worden bijgewerkt.');
+    }
     render();
   };
+}
+
+function accountPage(){
+  const account=getAccountContext();
+  const roleLabels={owner:'Eigenaar',planner:'Planner',technician:'Monteur',viewer:'Alleen lezen'};
+  const created=account?.organization?.created_at ? new Date(account.organization.created_at).toLocaleDateString('nl-NL') : '-';
+  const confirmed=account?.user?.email_confirmed_at ? 'Bevestigd' : 'Niet bevestigd';
+  app.innerHTML=`<section class="screen">
+    <article class="card account-hero-card">
+      <div class="account-avatar-large">${esc((account?.organization?.name||'OP').split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase())}</div>
+      <h2>${esc(account?.organization?.name||'Bedrijfsaccount')}</h2>
+      <p class="muted">${esc(account?.user?.email||'')}</p>
+      <span class="status-badge active">E-mail ${confirmed.toLowerCase()}</span>
+    </article>
+
+    <article class="card">
+      <h2>Accountgegevens</h2>
+      <div class="detail-grid">
+        <div class="mini"><span>Contactpersoon</span><b>${esc(account?.profile?.full_name||'-')}</b></div>
+        <div class="mini"><span>Rol</span><b>${esc(roleLabels[account?.membership?.role]||account?.membership?.role||'-')}</b></div>
+        <div class="mini"><span>Bedrijfsomgeving sinds</span><b>${esc(created)}</b></div>
+        <div class="mini"><span>Versie</span><b>${esc(APP_VERSION)}</b></div>
+      </div>
+    </article>
+
+    <article class="card notice-card">
+      <h2>Opslag in deze versie</h2>
+      <p class="muted">Je account en bedrijfsomgeving staan online. De onderhoudsgegevens zijn nu per account afgescheiden, maar staan tot v0.8.2 nog alleen op dit apparaat. Gebruik daarom de back-upfunctie bij Instellingen.</p>
+    </article>
+
+    <article class="card">
+      <button class="secondary full-width" type="button" onclick="nav('settings')">Bedrijfsinstellingen wijzigen</button>
+      <button class="danger full-width block-gap" type="button" onclick="maintenanceAccount.signOut()">Uitloggen</button>
+    </article>
+  </section>`;
 }
 
 function downloadBlob(content,filename,type='application/octet-stream'){

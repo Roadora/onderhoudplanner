@@ -11,14 +11,19 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 </head>
 <body>
-  <div class="app-shell">
+  <div id="authRoot"></div>
+
+  <div class="app-shell" id="appShell" hidden>
     <header class="topbar">
       <button class="icon-btn" id="backBtn" aria-label="Terug" hidden>←</button>
-      <div>
+      <div class="topbar-title">
         <p class="eyebrow">OnderhoudPlanner</p>
         <h1 id="pageTitle">Dashboard</h1>
       </div>
-      <button class="icon-btn" id="notifyBtn" aria-label="Open onderhoudsactielijst">🔔</button>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="notifyBtn" aria-label="Open onderhoudsactielijst">🔔</button>
+        <button class="account-btn" id="accountBtn" aria-label="Open bedrijfsaccount">OP</button>
+      </div>
     </header>
 
     <main id="app"></main>

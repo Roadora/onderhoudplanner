@@ -1,3 +1,9 @@
+# v0.8.1b
+
+- Node.js runtime gewijzigd van 20.x naar 24.x.
+- Compatibel gemaakt met `@supabase/supabase-js` 2.110.2, dat Node.js 22 of hoger vereist.
+- Vercel-configuratie en installatie-instructies bijgewerkt.
+
 # Wijzigingen v0.8.1
 
 - Supabase Auth toegevoegd.

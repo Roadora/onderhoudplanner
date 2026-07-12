@@ -5,9 +5,9 @@ Deze versie voegt echte bedrijfsaccounts toe met Supabase Auth. Zonder geldig en
 
 ## Belangrijke Vercel-fix in v0.8.1a
 
-Deze versie zet Vercel expliciet op **Node.js 20.x** via `package.json`. Nieuwe Vercel-projecten gebruiken anders standaard Node.js 24.x. In npm zijn actuele meldingen bekend waarbij `npm install` op Node.js 22/24 kan stoppen met `Exit handler never called!`. Node.js 20 werkt in die meldingen wel.
+Deze versie zet Vercel expliciet op **Node.js 24.x** via `package.json`. Nieuwe Vercel-projecten gebruiken anders standaard Node.js 24.x. In npm zijn actuele meldingen bekend waarbij `npm install` op Node.js 22/24 kan stoppen met `Exit handler never called!`. Node.js 24 werkt in die meldingen wel.
 
-Na upload naar GitHub: controleer in Vercel onder **Settings → Build and Deployment → Node.js Version** dat `20.x` staat en start daarna een nieuwe deployment zonder oude buildcache.
+Na upload naar GitHub: controleer in Vercel onder **Settings → Build and Deployment → Node.js Version** dat `24.x` staat en start daarna een nieuwe deployment zonder oude buildcache.
 
 ## Wat werkt in v0.8.1
 
@@ -101,7 +101,7 @@ Gebruik in de frontend uitsluitend de **Publishable key**. Zet nooit een `sb_sec
 
 ## 6. Lokaal starten
 
-Vereist voor deze stabiele Vercel-versie: Node.js 20.x (minimaal 20.19).
+Vereist voor deze stabiele Vercel-versie: Node.js 24.x (minimaal 20.19).
 
 ```bash
 npm install
@@ -167,3 +167,8 @@ supabase/AUTH_SETUP.md        korte Supabase-checklist
 - automatische e-mail- of WhatsApp-herinneringen.
 
 De eerstvolgende stap is **v0.8.2 Cloudgegevens**. Daarna volgt Stripe, waarbij het abonnement pas start nadat de betaalmethode tijdens de 14-daagse proefaanmelding is vastgelegd.
+
+
+## Vercel Node-versie
+
+Deze versie gebruikt Node.js `24.x`. Stel in Vercel bij **Settings → Build and Deployment → Node.js Version** eveneens `24.x` in. Start daarna een nieuwe deployment zonder oude buildcache.

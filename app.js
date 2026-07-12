@@ -1,10 +1,13 @@
-const KEY = 'onderhoudplanner_v06_empty';
+const KEY = 'onderhoudplanner_v07_pilot';
+const LEGACY_KEYS = ['onderhoudplanner_v06_empty'];
+const APP_VERSION = '0.7 Pilot';
 
 const $ = (s) => document.querySelector(s);
 const app = $('#app');
 const pageTitle = $('#pageTitle');
 const backBtn = $('#backBtn');
 const fabAdd = $('#fabAdd');
+const notifyBtn = $('#notifyBtn');
 
 const BRAND_OPTIONS = [
   'Daikin','Mitsubishi Electric','LG','Samsung','Panasonic','Toshiba','Fujitsu','Hitachi',
@@ -38,43 +41,125 @@ const MODEL_OPTIONS = {
   'Weishaupt':['Biblock','Aeroblock','Anders...']
 };
 
-function makeSystem(customerId,type,brand,model,serial,installedAt,interval,installTime='09:00'){
-  return { id: crypto.randomUUID(), customerId, type, brand, model, serial, installedAt, installTime, interval:Number(interval), lastService:null, serviceStatus:'active', pausedUntil:null, statusNote:'', reminderCustomer:true, reminderCompany:true, doneCount:0 };
+const DEFAULT_SETTINGS = {
+  companyName:'Airco Service',
+  contactName:'',
+  maintenancePrice:129,
+  leadDays:45,
+  defaultInterval:12,
+  whatsappTemplate:'Hallo {naam}, volgens onze planning is het weer tijd voor onderhoud aan uw {systeem}. Zullen we een afspraak inplannen? Groet, {bedrijf}'
+};
+
+function uid(){
+  if(globalThis.crypto?.randomUUID) return crypto.randomUUID();
+  return 'id-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
+}
+
+function makeSystem(customerId,type,brand,model,serial,installedAt,interval){
+  return {
+    id:uid(), customerId, type, brand, model, serial, installedAt,
+    interval:Number(interval), lastService:null, serviceStatus:'active', pausedUntil:null,
+    statusNote:'', reminderCustomer:true, reminderCompany:true, doneCount:0,
+    contactStatus:'not_contacted', lastContactAt:null, maintenancePrice:null
+  };
 }
 
 const demoState = {
   company:'Airco Service',
+  settings:{...DEFAULT_SETTINGS},
   customers:[],
   systems:[],
-  appointments:[]
+  appointments:[],
+  updatedAt:null
 };
 
 let state = load();
 let route = {name:'dashboard'};
 let calendarMonth = new Date();
 let selectedAgendaDate = todayKey();
+let deferredInstallPrompt = null;
+
+function normalizeState(raw){
+  const data = raw && typeof raw === 'object' ? raw : {};
+  data.customers = Array.isArray(data.customers) ? data.customers : [];
+  data.systems = Array.isArray(data.systems) ? data.systems : [];
+  data.appointments = Array.isArray(data.appointments) ? data.appointments : [];
+  data.settings = {...DEFAULT_SETTINGS, ...(data.settings || {})};
+  if(data.company && !data.settings.companyName) data.settings.companyName = data.company;
+  data.company = data.settings.companyName;
+  data.systems.forEach(s=>{
+    if(!s.id) s.id=uid();
+    if(!s.serviceStatus) s.serviceStatus='active';
+    if(s.pausedUntil===undefined) s.pausedUntil=null;
+    if(s.statusNote===undefined) s.statusNote='';
+    if(s.reminderCompany===undefined) s.reminderCompany=true;
+    if(s.reminderCustomer===undefined) s.reminderCustomer=true;
+    if(!s.contactStatus) s.contactStatus='not_contacted';
+    if(s.lastContactAt===undefined) s.lastContactAt=null;
+    if(s.maintenancePrice===undefined) s.maintenancePrice=null;
+    s.interval=Number(s.interval||0);
+  });
+  data.customers.forEach(c=>{
+    if(!c.id) c.id=uid();
+    ['name','address','postalCode','city','phone','email','memo'].forEach(k=>{ if(c[k]===undefined) c[k]=''; });
+  });
+  data.appointments.forEach(a=>{ if(!a.id) a.id=uid(); });
+  return data;
+}
 
 function load(){
   try{
-    const old = JSON.parse(localStorage.getItem(KEY));
-    const data = old || demoState;
-    if(!data.appointments) data.appointments = [];
-    (data.systems||[]).forEach(s=>{ if(!s.serviceStatus) s.serviceStatus='active'; if(s.pausedUntil===undefined) s.pausedUntil=null; if(s.statusNote===undefined) s.statusNote=''; });
+    let raw = localStorage.getItem(KEY);
+    if(!raw){
+      for(const legacyKey of LEGACY_KEYS){
+        const legacy=localStorage.getItem(legacyKey);
+        if(legacy){ raw=legacy; break; }
+      }
+    }
+    const data = normalizeState(raw ? JSON.parse(raw) : structuredClone(demoState));
+    localStorage.setItem(KEY, JSON.stringify(data));
     return data;
   }catch(e){
-    return demoState;
+    console.error('Data laden mislukt',e);
+    return normalizeState(structuredClone(demoState));
   }
 }
 
-function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
-function todayKey(){ return new Date().toISOString().slice(0,10); }
+function save(){
+  try{
+    state.updatedAt=new Date().toISOString();
+    state.company=state.settings.companyName;
+    localStorage.setItem(KEY, JSON.stringify(state));
+  }catch(e){
+    console.error('Opslaan mislukt',e);
+    alert('Opslaan is mislukt. Maak eerst een back-up en controleer de opslagruimte van de browser.');
+  }
+}
+function todayKey(){ return toDateKey(new Date()); }
 function toDateKey(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
-function addMonths(date, months){ const d=new Date(date+'T12:00:00'); d.setMonth(d.getMonth()+Number(months)); return d.toISOString().slice(0,10); }
-function nextDate(s){ return addMonths(s.lastService || s.installedAt, Number(s.interval) || 0); }
-function daysUntil(date){ const a=new Date(); a.setHours(0,0,0,0); const b=new Date(date+'T00:00:00'); return Math.ceil((b-a)/86400000); }
-function fmt(date){ return new Date(date+'T12:00:00').toLocaleDateString('nl-NL',{day:'numeric',month:'long',year:'numeric'}); }
+function parseDateKey(date){
+  const [y,m,d]=String(date||'').split('-').map(Number);
+  return new Date(y||1970,(m||1)-1,d||1,12,0,0,0);
+}
+function addMonths(date, months){
+  const source=parseDateKey(date);
+  const day=source.getDate();
+  const target=new Date(source.getFullYear(), source.getMonth()+Number(months||0), 1, 12,0,0,0);
+  const lastDay=new Date(target.getFullYear(),target.getMonth()+1,0,12).getDate();
+  target.setDate(Math.min(day,lastDay));
+  return toDateKey(target);
+}
+function nextDate(s){ return addMonths(s.lastService || s.installedAt || todayKey(), Number(s.interval) || 0); }
+function daysUntil(date){
+  const a=parseDateKey(todayKey());
+  const b=parseDateKey(date);
+  return Math.round((b-a)/86400000);
+}
+function fmt(date){ return date ? parseDateKey(date).toLocaleDateString('nl-NL',{day:'numeric',month:'long',year:'numeric'}) : '-'; }
+function fmtShort(date){ return date ? parseDateKey(date).toLocaleDateString('nl-NL',{day:'2-digit',month:'2-digit',year:'numeric'}) : '-'; }
 function monthLabel(date){ return date.toLocaleDateString('nl-NL',{month:'long',year:'numeric'}); }
-function esc(v=''){ return String(v).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+function esc(v=''){ return String(v).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll("'",'&#039;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+function euro(value){ return new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(Number(value)||0); }
 function fullAddress(c={}){
   return [c.address, [c.postalCode, c.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 }
@@ -85,7 +170,7 @@ function systemsForCustomer(id){ return state.systems.filter(s=>s.customerId===i
 function sortedSystems(){ return [...state.systems].sort((a,b)=>nextDate(a).localeCompare(nextDate(b))); }
 function appointments(){ return state.appointments || []; }
 function appointmentsOnDate(date){ return appointments().filter(a=>a.date===date).sort((a,b)=>(a.time||'').localeCompare(b.time||'')); }
-function appointmentForSystem(systemId){ return appointments().filter(a=>a.systemId===systemId).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0]; }
+function appointmentForSystem(systemId){ return appointments().filter(a=>a.systemId===systemId && a.date>=todayKey()).sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')))[0]; }
 
 function appointmentIcon(type){
   if(type==='plaatsing') return '🛠';
@@ -101,79 +186,6 @@ function appointmentTitle(type){
 }
 function appointmentsForCustomer(customerId){
   return appointments().filter(a=>a.customerId===customerId || (a.systemId && systemById(a.systemId)?.customerId===customerId));
-}
-
-function autoCreatePlacementAppointment(system, customerId){
-  if(!system || !system.installedAt) return;
-  if(daysUntil(system.installedAt) < 0) return;
-  const exists = appointments().some(a =>
-    a.systemId === system.id &&
-    a.type === 'plaatsing' &&
-    a.date === system.installedAt
-  );
-  if(exists) return;
-  state.appointments.push({
-    id: crypto.randomUUID(),
-    type: 'plaatsing',
-    status: 'gepland',
-    customerId,
-    systemId: system.id,
-    date: system.installedAt,
-    time: system.installTime || '09:00',
-    note: `Plaatsing ${system.brand} ${system.model}`
-  });
-}
-
-
-
-function hasAppointment(systemId, type, date){
-  return appointments().some(a => a.systemId === systemId && a.type === type && a.date === date);
-}
-function autoCreateMaintenanceAppointment(system, customerId, baseDate=null){
-  if(!system || system.serviceStatus === 'declined') return;
-  const interval = Number(system.interval || 0);
-  if(!interval || interval <= 0) return;
-  const startDate = baseDate || system.lastService || system.installedAt;
-  if(!startDate) return;
-  const maintenanceDate = addMonths(startDate, interval);
-  if(hasAppointment(system.id, 'onderhoud', maintenanceDate)) return;
-  state.appointments.push({
-    id: crypto.randomUUID(),
-    type: 'onderhoud',
-    status: 'gepland',
-    customerId,
-    systemId: system.id,
-    date: maintenanceDate,
-    time: '09:00',
-    note: `Onderhoud ${system.brand} ${system.model}`
-  });
-}
-function appointmentStatusBadge(a){
-  if(a.status === 'onderweg') return '<span class="status-badge paused">Onderweg</span>';
-  if(a.status === 'uitgevoerd') return '<span class="status-badge active">Uitgevoerd</span>';
-  return '${appointmentStatusBadge(a)}';
-}
-function setAppointmentStatus(id, status){
-  const a = appointments().find(x=>x.id===id);
-  if(!a) return;
-  a.status = status;
-  save();
-  appointmentDetail(id);
-}
-function completeAppointment(id){
-  const a = appointments().find(x=>x.id===id);
-  if(!a) return;
-  a.status = 'uitgevoerd';
-  if(a.systemId && a.type === 'onderhoud'){
-    const s = systemById(a.systemId);
-    if(s){
-      s.lastService = todayKey();
-      s.doneCount = (s.doneCount || 0) + 1;
-      autoCreateMaintenanceAppointment(s, s.customerId, todayKey());
-    }
-  }
-  save();
-  nav('dayPlan',{date:a.date,back:'agenda'});
 }
 
 function isSystemActiveForPlanning(s){
@@ -197,10 +209,40 @@ function dueLabel(s){
   return `<span class="due">Over ${d} dagen</span>`;
 }
 
-function whatsappLink(c){
+function contactStatusLabel(value){
+  return ({not_contacted:'Nog benaderen',contacted:'Bericht verstuurd',responded:'Reactie ontvangen',scheduled:'Ingepland',completed:'Afgerond'})[value] || 'Nog benaderen';
+}
+function contactStatusClass(value){
+  return ({not_contacted:'neutral',contacted:'paused',responded:'info',scheduled:'active',completed:'done'})[value] || 'neutral';
+}
+function contactStatusBadge(s){ return `<span class="status-badge ${contactStatusClass(s.contactStatus)}">${contactStatusLabel(s.contactStatus)}</span>`; }
+function systemPrice(s){ return Number(s.maintenancePrice ?? state.settings.maintenancePrice ?? 0); }
+function messageFor(c={},s=null){
+  const systemName=s ? `${s.type==='warmtepomp'?'warmtepomp':'airco'} ${s.brand||''} ${s.model||''}`.trim() : 'installatie';
+  return String(state.settings.whatsappTemplate || DEFAULT_SETTINGS.whatsappTemplate)
+    .replaceAll('{naam}',c.name||'')
+    .replaceAll('{bedrijf}',state.settings.companyName||'')
+    .replaceAll('{datum}',s?fmt(nextDate(s)):'')
+    .replaceAll('{systeem}',systemName);
+}
+function whatsappLink(c,s=null){
   const phone=(c.phone||'').replace(/\D/g,'').replace(/^0/,'31');
-  const text=encodeURIComponent(`Hallo ${c.name}, het is weer tijd voor onderhoud. Zullen we een afspraak plannen?`);
-  return `https://wa.me/${phone}?text=${text}`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(messageFor(c,s))}`;
+}
+function markContacted(id){
+  const s=systemById(id); if(!s) return;
+  s.contactStatus='contacted'; s.lastContactAt=todayKey(); save(); render();
+}
+function setContactStatus(id,value){
+  const s=systemById(id); if(!s) return;
+  s.contactStatus=value;
+  if(['contacted','responded'].includes(value)) s.lastContactAt=todayKey();
+  save(); render();
+}
+function contactStatusSelect(s){
+  return `<select class="status-select" onchange="setContactStatus('${s.id}',this.value)">
+    ${['not_contacted','contacted','responded','scheduled','completed'].map(v=>`<option value="${v}" ${s.contactStatus===v?'selected':''}>${contactStatusLabel(v)}</option>`).join('')}
+  </select>`;
 }
 
 function nav(name, params={}){
@@ -222,7 +264,7 @@ function render(){
   const titles = {
     dashboard:'Dashboard', customers:'Klanten', agenda:'Agenda', settings:'Instellingen',
     new:'Nieuwe installatie', detail:'Klantdetail', editCustomer:'Klant bewerken',
-    editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails'
+    editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails', notifications:'Actielijst'
   };
   pageTitle.textContent = titles[route.name] || 'OnderhoudPlanner';
 
@@ -238,14 +280,14 @@ function render(){
   if(route.name==='newAppointment') newAppointment();
   if(route.name==='dayPlan') dayPlan(route.date);
   if(route.name==='appointmentDetail') appointmentDetail(route.appointmentId);
+  if(route.name==='notifications') notificationsPage();
 
   updateFab();
 }
 
 function navBack(){
   if(route.name==='appointmentDetail') return nav('dayPlan',{date:route.date || todayKey(),back:'agenda'});
-  if(route.name==='appointmentDetail') return nav('dayPlan',{date:route.date || todayKey(),back:'agenda'});
-  if(route.name==='appointmentDetail') return nav('dayPlan',{date:route.date || todayKey(),back:'agenda'});
+  if(route.name==='notifications') return nav('dashboard');
   if(route.name==='detail') return nav(route.back || 'dashboard');
   if(route.name==='editCustomer') return nav('detail',{customerId:route.customerId,back:'customers'});
   if(route.name==='editSystem' || route.name==='planAppointment'){
@@ -257,62 +299,116 @@ function navBack(){
 
 document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>nav(b.dataset.route));
 
-
 function dashboardGreeting(){
-  const h = new Date().getHours();
-  if(h >= 5 && h < 12) return 'Goedemorgen Ike 👋';
-  if(h >= 12 && h < 18) return 'Goedemiddag Ike 👋';
-  return 'Goedenavond Ike 👋';
+  const h=new Date().getHours();
+  const name=(state.settings.contactName||'').trim();
+  const suffix=name ? ` ${esc(name)}` : '';
+  if(h>=5 && h<12) return `Goedemorgen${suffix} 👋`;
+  if(h>=12 && h<18) return `Goedemiddag${suffix} 👋`;
+  return `Goedenavond${suffix} 👋`;
 }
 
+function actionSystems(){
+  const leadDays=Number(state.settings.leadDays)||45;
+  return sortedSystems().filter(s=>s.reminderCompany!==false && isSystemActiveForPlanning(s) && daysUntil(nextDate(s))<=leadDays);
+}
 function stats(){
   const dueNow = state.systems.filter(s=>isSystemActiveForPlanning(s) && daysUntil(nextDate(s))<=0).length;
   const dueSoon = state.systems.filter(s=>{const d=daysUntil(nextDate(s)); return isSystemActiveForPlanning(s) && d>0 && d<=30;}).length;
   return { customers: state.customers.length, systems: state.systems.length, dueNow, dueSoon };
 }
-
+function expectedRevenue(days=365){
+  return state.systems.filter(s=>isSystemActiveForPlanning(s) && daysUntil(nextDate(s))<=days).reduce((sum,s)=>sum+systemPrice(s),0);
+}
 function statCards(){
   const s=stats();
   return `<div class="stats">
-    <div class="stat">👥<b>${s.customers}</b><span>Actieve klanten</span></div>
+    <div class="stat">👥<b>${s.customers}</b><span>Klanten</span></div>
     <div class="stat">❄️<b>${s.systems}</b><span>Systemen</span></div>
-    <div class="stat">🔴<b>${s.dueNow}</b><span>Onderhoud nodig</span></div>
+    <div class="stat">🔴<b>${s.dueNow}</b><span>Nu nodig</span></div>
     <div class="stat">🟠<b>${s.dueSoon}</b><span>Binnen 30 dagen</span></div>
   </div>`;
 }
-
+function revenueCard(){
+  const leadDays=Number(state.settings.leadDays)||45;
+  return `<article class="card revenue-card">
+    <div class="row between">
+      <div><p class="muted">Potentiële onderhoudsomzet</p><p class="revenue-number">${euro(expectedRevenue(365))}</p></div>
+      <div class="revenue-icon">↗</div>
+    </div>
+    <div class="revenue-split"><span>Binnen ${leadDays} dagen <b>${euro(expectedRevenue(leadDays))}</b></span><span>Komende 12 maanden <b>${euro(expectedRevenue(365))}</b></span></div>
+    <p class="helper">Indicatie op basis van de ingestelde onderhoudsprijs per systeem.</p>
+  </article>`;
+}
 function systemCard(s, compact=false){
   const c=customer(s.customerId)||{};
   return `<article class="card ${compact?'compact':''}" onclick="nav('detail',{customerId:'${s.customerId}',back:'${route.name}'})">
     <div class="row">
       <div class="avatar">${s.type==='warmtepomp'?'♨️':'❄️'}</div>
-      <div>
-        <p class="title">${c.name||'Onbekende klant'}</p>
-        <p class="muted">${s.brand} ${s.model}</p>
-        <p class="muted">📍 ${fullAddress(c)}</p>
+      <div class="grow">
+        <p class="title">${esc(c.name||'Onbekende klant')}</p>
+        <p class="muted">${esc(s.brand)} ${esc(s.model)}</p>
+        <p class="muted">📍 ${esc(fullAddress(c))}</p>
       </div>
       <div class="right-chevron">›</div>
     </div>
-    <div class="row between" style="margin-top:10px">
-      <span class="muted">${fmt(nextDate(s))}</span>${isSystemActiveForPlanning(s) ? dueLabel(s) : statusBadge(s)}
+    <div class="row between card-meta">
+      <span class="muted">${fmt(nextDate(s))} · ${euro(systemPrice(s))}</span>${contactStatusBadge(s)}
     </div>
   </article>`;
 }
-
+function quickActionCard(s){
+  const c=customer(s.customerId)||{};
+  const hasPhone=Boolean((c.phone||'').replace(/\D/g,''));
+  return `<article class="card action-card">
+    <div class="row between">
+      <div class="grow"><p class="title">${esc(c.name||'Onbekende klant')}</p><p class="muted">${esc(s.brand)} ${esc(s.model)} · ${fmt(nextDate(s))}</p></div>
+      ${dueLabel(s)}
+    </div>
+    <div class="status-row">${contactStatusSelect(s)}<span>${euro(systemPrice(s))}</span></div>
+    <div class="actions">
+      <a class="secondary whatsapp ${hasPhone?'':'disabled'}" ${hasPhone?`href="${whatsappLink(c,s)}" onclick="markContacted('${s.id}')"`:'aria-disabled="true"'}>💬 WhatsApp</a>
+      <button class="secondary" onclick="nav('planAppointment',{systemId:'${s.id}',back:'dashboard'})">📅 Inplannen</button>
+    </div>
+  </article>`;
+}
 function dashboard(){
-  const action = sortedSystems().filter(s=>isSystemActiveForPlanning(s) && daysUntil(nextDate(s))<=30).slice(0,4);
+  const action = actionSystems().slice(0,4);
   app.innerHTML = `<section class="screen">
     <article class="card">
       <p class="title dashboard-greeting">${dashboardGreeting()}</p>
-      <p class="muted">Hier is jouw planning voor vandaag.</p>
+      <p class="muted">${esc(state.settings.companyName)} · ${actionSystems().length} onderhoudsmomenten vragen aandacht.</p>
     </article>
     ${statCards()}
+    ${revenueCard()}
     <div class="list-header">
-      <h2>Komende onderhoudsbeurten</h2>
-      <button class="link" onclick="nav('agenda')">Bekijk alles</button>
+      <h2>Te benaderen</h2>
+      <button class="link" onclick="nav('notifications')">Volledige actielijst</button>
     </div>
-    ${action.map(systemCard).join('') || '<div class="card empty">Geen onderhoud nodig.</div>'}
+    ${action.map(quickActionCard).join('') || '<div class="card empty">Geen onderhoud binnen de ingestelde periode.</div>'}
   </section>`;
+}
+function notificationsPage(){
+  const items=actionSystems();
+  app.innerHTML=`<section class="screen">
+    <article class="card"><p class="title">Onderhoudsactielijst</p><p class="muted">Gesorteerd op eerstvolgende onderhoudsdatum. Werk de contactstatus direct bij.</p></article>
+    <div class="filter-chips">
+      <button class="chip active" data-filter="all">Alles (${items.length})</button>
+      <button class="chip" data-filter="not_contacted">Nog benaderen</button>
+      <button class="chip" data-filter="contacted">Verstuurd</button>
+      <button class="chip" data-filter="scheduled">Ingepland</button>
+    </div>
+    <div id="actionList"></div>
+  </section>`;
+  const draw=(filter='all')=>{
+    const filtered=filter==='all'?items:items.filter(s=>s.contactStatus===filter);
+    $('#actionList').innerHTML=filtered.map(quickActionCard).join('') || '<div class="card empty">Geen items in deze status.</div>';
+  };
+  document.querySelectorAll('.chip').forEach(btn=>btn.onclick=()=>{
+    document.querySelectorAll('.chip').forEach(b=>b.classList.toggle('active',b===btn));
+    draw(btn.dataset.filter);
+  });
+  draw();
 }
 
 function customers(){
@@ -329,8 +425,8 @@ function customers(){
       .map(c=>`<article class="card" onclick="nav('detail',{customerId:'${c.id}',back:'customers'})">
         <div class="row between">
           <div>
-            <p class="title">${c.name}</p>
-            <p class="muted">${fullAddress(c)}</p>
+            <p class="title">${esc(c.name)}</p>
+            <p class="muted">${esc(fullAddress(c))}</p>
             <p class="muted">${systemsForCustomer(c.id).length} systeem/systemen</p>${c.memo ? `<p class="muted">📝 ${esc(c.memo).slice(0,55)}${c.memo.length>55?'...':''}</p>` : ''}
           </div>
           <span class="right-chevron">›</span>
@@ -386,13 +482,13 @@ function agendaDayCard(s){
     <div class="row">
       <div class="avatar">${s.type==='warmtepomp'?'♨️':'❄️'}</div>
       <div>
-        <p class="title">${c.name}</p>
-        <p class="muted">${s.brand} ${s.model}</p>
-        <p class="muted">📍 ${c.address}</p>
+        <p class="title">${esc(c.name)}</p>
+        <p class="muted">${esc(s.brand)} ${esc(s.model)}</p>
+        <p class="muted">📍 ${esc(c.address)}</p>
       </div>
     </div>
     <div class="actions">
-      <a class="secondary" href="tel:${c.phone}">📞 Bel</a>
+      <a class="secondary" href="tel:${esc(c.phone)}">📞 Bel</a>
       <a class="secondary whatsapp" href="${whatsappLink(c)}">💬 WhatsApp</a>
     </div>
     <div class="actions">
@@ -406,14 +502,14 @@ function appointmentCard(a){
   const s=a.systemId ? systemById(a.systemId) : null;
   const c=(a.customerId ? customer(a.customerId) : null) || (s ? customer(s.customerId) : {}) || {};
   const title = appointmentTitle(a.type || 'onderhoud');
-  const subtitle = s ? `${s.brand} ${s.model}` : (a.note || 'Afspraak');
+  const subtitle = s ? `${esc(s.brand)} ${esc(s.model)}` : esc(a.note || 'Afspraak');
   return `<article class="card compact">
     <div class="row between">
       <div>
         <p class="title">${appointmentIcon(a.type)} ${a.time||'Tijd onbekend'} · ${title}</p>
         <p class="muted">${c.name || 'Geen klant gekozen'}</p>
         <p class="muted">${subtitle}</p>
-        ${a.note && s ? `<p class="muted">${a.note}</p>` : ''}
+        ${a.note && s ? `<p class="muted">${esc(a.note)}</p>` : ''}
       </div>
       <button class="edit-btn" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'agenda'})">✏️</button>
     </div>
@@ -465,21 +561,21 @@ function appointmentDetail(id){
         <div class="mini"><span>Type</span><b>${appointmentTitle(a.type || 'onderhoud')}</b></div>
         <div class="mini"><span>Tijd</span><b>${a.time || '-'}</b></div>
         <div class="mini"><span>Datum</span><b>${fmt(a.date)}</b></div>
-        <div class="mini"><span>Status</span><b>${a.status==='onderweg'?'Onderweg':a.status==='uitgevoerd'?'Uitgevoerd':'Gepland'}</b></div>
+        <div class="mini"><span>Status</span><b>Gepland</b></div>
       </div>
       ${a.note ? `<div class="notice appointment-note" style="margin-top:12px"><b>Notitie</b><br>${esc(a.note)}</div>` : ''}
     </article>
 
     ${s ? `<article class="card">
       <p class="title">Systeem</p>
-      <p class="muted">${s.type==='warmtepomp'?'Warmtepomp':'Airco'} · ${s.brand} ${s.model}</p>
+      <p class="muted">${s.type==='warmtepomp'?'Warmtepomp':'Airco'} · ${esc(s.brand)} ${esc(s.model)}</p>
       <div class="detail-grid" style="margin-top:12px">
         <div class="mini"><span>Serienummer</span><b>${s.serial || '-'}</b></div>
         <div class="mini"><span>Interval</span><b>${s.interval} maanden</b></div>
       </div>
     </article>` : ''}
 
-    <div class="detail-action-grid"><button class="secondary" onclick="setAppointmentStatus('${a.id}','onderweg')">🚗 Onderweg</button><button class="primary" onclick="completeAppointment('${a.id}')">✅ Uitgevoerd</button></div><button class="primary" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'appointmentDetail'})">✏️ Afspraak bewerken</button>
+    <button class="primary" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'appointmentDetail'})">✏️ Afspraak bewerken</button>
     <button class="danger" style="width:100%;margin-top:10px" onclick="deleteGenericAppointment('${a.id}')">🗑 Afspraak verwijderen</button>
   </section>`;
 }
@@ -501,7 +597,7 @@ function dayPlan(date){
       return `<article class="planner-card" onclick="nav('appointmentDetail',{appointmentId:'${a.id}',date:'${date}',back:'dayPlan'})">
         <div class="planner-time">${a.time||'--:--'}</div>
         <div class="planner-content">
-          <div class="row between"><p class="title">${appointmentIcon(a.type)} ${appointmentTitle(a.type||'onderhoud')}</p>${appointmentStatusBadge(a)}</div>
+          <p class="title">${appointmentIcon(a.type)} ${appointmentTitle(a.type||'onderhoud')}</p>
           <p class="planner-name">${workLine}</p>
           <p class="muted">📍 ${fullAddress(c) || 'Geen adres ingevuld'}</p>
         </div>
@@ -538,53 +634,57 @@ function detail(id){
   const c=customer(id);
   if(!c) return nav('customers');
   const systems=systemsForCustomer(id);
+  const hasPhone=Boolean((c.phone||'').replace(/\D/g,''));
 
   app.innerHTML = `<section class="screen">
     <article class="card">
       <div class="row">
         <div class="avatar">❄️</div>
-        <div style="flex:1">
+        <div class="grow">
           <div class="row between">
-            <p class="title">${c.name} <span class="pill">Actief</span></p>
+            <p class="title">${esc(c.name)} <span class="pill">Klant</span></p>
             <button class="edit-btn" onclick="event.stopPropagation(); nav('editCustomer',{customerId:'${c.id}',back:'detail'})">✏️</button>
           </div>
-          <p class="muted">${fullAddress(c)}</p>
-          <p class="muted">☎ ${c.phone}</p>
-          <p class="muted">✉ ${c.email}</p>
+          <p class="muted">${esc(fullAddress(c)||'Geen adres')}</p>
+          <p class="muted">☎ ${esc(c.phone||'Geen telefoon')}</p>
+          <p class="muted">✉ ${esc(c.email||'Geen e-mail')}</p>
           ${c.memo ? `<div class="customer-memo">📝 ${esc(c.memo)}</div>` : ''}
         </div>
       </div>
       <div class="actions">
-        <a class="secondary" href="tel:${c.phone}">📞 Bel klant</a>
-        <a class="secondary whatsapp" href="${whatsappLink(c)}">💬 WhatsApp</a>
+        <a class="secondary ${hasPhone?'':'disabled'}" ${hasPhone?`href="tel:${esc(c.phone)}"`:'aria-disabled="true"'}>📞 Bel klant</a>
+        <a class="secondary whatsapp ${hasPhone?'':'disabled'}" ${hasPhone?`href="${whatsappLink(c)}"`:'aria-disabled="true"'}>💬 WhatsApp</a>
       </div>
     </article>
 
     <h2>Afspraken</h2>
-    ${appointmentsForCustomer(c.id).slice(0,3).map(appointmentCard).join('') || '<div class="card empty">Nog geen afspraken bij deze klant.</div>'}
-    <button class="secondary" onclick="nav('newAppointment',{customerId:'${c.id}',back:'detail'})">+ Afspraak bij deze klant</button>
+    ${appointmentsForCustomer(c.id).filter(a=>a.date>=todayKey()).slice(0,3).map(appointmentCard).join('') || '<div class="card empty">Nog geen komende afspraken bij deze klant.</div>'}
+    <button class="secondary full-width" onclick="nav('newAppointment',{customerId:'${c.id}',back:'detail'})">+ Afspraak bij deze klant</button>
 
     <h2>Systemen</h2>
     ${systems.map(s=>`<article class="card">
       <div class="row between">
-        <p class="title">${s.type==='warmtepomp'?'Warmtepomp':'Airco'} / ${s.brand} ${s.model}</p>
+        <div><p class="title">${s.type==='warmtepomp'?'Warmtepomp':'Airco'} / ${esc(s.brand)} ${esc(s.model)}</p><p class="muted">${contactStatusBadge(s)}</p></div>
         <button class="edit-btn" onclick="event.stopPropagation(); nav('editSystem',{systemId:'${s.id}',back:'detail'})">✏️</button>
       </div>
-      <p style="margin:10px 0 0">${dueLabel(s)}</p>
-      <div class="detail-grid" style="margin-top:12px">
-        <div class="mini"><span>Serienummer</span><b>${s.serial||'-'}</b></div>
+      <p class="card-meta">${isSystemActiveForPlanning(s)?dueLabel(s):statusBadge(s)}</p>
+      <div class="detail-grid">
+        <div class="mini"><span>Serienummer</span><b>${esc(s.serial||'-')}</b></div>
         <div class="mini"><span>Installatie</span><b>${fmt(s.installedAt)}</b></div>
         <div class="mini"><span>Interval</span><b>Elke ${s.interval} maanden</b></div>
         <div class="mini"><span>Volgend onderhoud</span><b>${fmt(nextDate(s))}</b></div>
+        <div class="mini"><span>Onderhoudsprijs</span><b>${euro(systemPrice(s))}</b></div>
+        <div class="mini"><span>Uitgevoerd</span><b>${Number(s.doneCount)||0} keer</b></div>
       </div>
-      <div class="notice" style="margin-top:12px">Reminder naar bedrijf: ${s.reminderCompany?'aan':'uit'} · Reminder naar klant: ${s.reminderCustomer?'aan':'uit'}</div>
       ${appointmentInfo(s)}
-      <div class="notice status-note" style="margin-top:12px"><b>Status</b><br>${statusBadge(s)}${s.statusNote ? '<br>'+esc(s.statusNote) : ''}</div>
+      <div class="notice status-note block-gap"><b>Onderhoudsstatus</b><br>${statusBadge(s)}${s.statusNote ? '<br>'+esc(s.statusNote) : ''}</div>
+      <div class="status-row">${contactStatusSelect(s)}${s.lastContactAt?`<small>Laatst: ${fmtShort(s.lastContactAt)}</small>`:''}</div>
       <div class="actions">
-        <button class="secondary" onclick="nav('planAppointment',{systemId:'${s.id}',back:'detail'})">📅 Afspraak plannen</button>
-        <button class="secondary" onclick="markDone('${s.id}')">✅ Uitgevoerd</button>
+        <a class="secondary whatsapp ${hasPhone?'':'disabled'}" ${hasPhone?`href="${whatsappLink(c,s)}" onclick="markContacted('${s.id}')"`:'aria-disabled="true"'}>💬 Herinner klant</a>
+        <button class="secondary" onclick="nav('planAppointment',{systemId:'${s.id}',back:'detail'})">📅 Inplannen</button>
       </div>
-      <button class="danger" style="width:100%;margin-top:10px" onclick="deleteSystem('${s.id}')">🗑 Verwijder</button>
+      <button class="primary secondary-primary" onclick="markDone('${s.id}')">✅ Onderhoud uitgevoerd</button>
+      <button class="danger full-width block-gap" onclick="deleteSystem('${s.id}')">🗑 Systeem verwijderen</button>
     </article>`).join('') || '<div class="card empty">Nog geen systemen bij deze klant.</div>'}
     <button class="primary" onclick="nav('new',{customerId:'${c.id}',back:'detail'})">+ Systeem toevoegen bij deze klant</button>
   </section>`;
@@ -633,6 +733,9 @@ function systemFormFields(s={}){
   const model = s.model || '';
   const modelList = MODEL_OPTIONS[brand] || ['Anders...'];
   const knownModel = modelList.includes(model);
+  const interval=Number(s.interval ?? state.settings.defaultInterval ?? 12);
+  const price=s.maintenancePrice ?? state.settings.maintenancePrice ?? 0;
+  const contactStatus=s.contactStatus || 'not_contacted';
 
   return `<div class="card form">
     <h2>Systeem</h2>
@@ -647,22 +750,23 @@ function systemFormFields(s={}){
     <div class="field brand-other ${knownBrand?'':'show'}"><label>Eigen merk</label><input name="brandOther" value="${knownBrand?'':esc(brand)}" placeholder="Vul eigen merk in"></div>
     <div class="field"><label>Model</label><select name="model">${modelSelectOptions(brand, model)}</select></div>
     <div class="field model-other ${knownModel?'':'show'}"><label>Eigen model</label><input name="modelOther" value="${knownModel?'':esc(model)}" placeholder="Vul eigen model in"></div>
-    <div class="field"><label>Serienummer</label><input name="serial" value="${esc(s.serial||'')}" placeholder="FTXG25LW"></div>
-    <div class="two"><div class="field"><label>Installatiedatum</label><input name="installedAt" type="date" value="${s.installedAt||''}" required></div><div class="field"><label>Tijd plaatsing</label><input name="installTime" type="time" value="${s.installTime||'09:00'}"></div></div><p class="field-hint">Ligt deze datum vandaag of in de toekomst? Dan komt de plaatsing automatisch in de agenda.</p>
-    <div class="field"><label>Onderhoudsstatus</label><select name="serviceStatus"><option value="active" ${!s.serviceStatus || s.serviceStatus==='active'?'selected':''}>Actief onderhoud</option><option value="paused" ${s.serviceStatus==='paused'?'selected':''}>Klant wil later</option><option value="declined" ${s.serviceStatus==='declined'?'selected':''}>Klant wil geen onderhoud</option></select></div>
-    <div class="field">
-      <label>Interval</label>
-      <select name="interval">
-        <option value="12" ${Number(s.interval||12)===12?'selected':''}>12 maanden</option>
-        <option value="6" ${Number(s.interval)===6?'selected':''}>6 maanden</option>
-        <option value="24" ${Number(s.interval)===24?'selected':''}>24 maanden</option>
-        <option value="0" ${Number(s.interval)===0?'selected':''}>0 maanden</option>
-      </select>
+    <div class="field"><label>Serienummer</label><input name="serial" value="${esc(s.serial||'')}" placeholder="Bijv. FTXG25LW"></div>
+    <div class="field"><label>Installatiedatum</label><input name="installedAt" type="date" value="${s.installedAt||todayKey()}" required></div>
+    <div class="two">
+      <div class="field"><label>Onderhoudsinterval</label><select name="interval">
+        <option value="6" ${interval===6?'selected':''}>6 maanden</option>
+        <option value="12" ${interval===12?'selected':''}>12 maanden</option>
+        <option value="18" ${interval===18?'selected':''}>18 maanden</option>
+        <option value="24" ${interval===24?'selected':''}>24 maanden</option>
+      </select></div>
+      <div class="field"><label>Prijs per onderhoud (€)</label><input name="maintenancePrice" type="number" min="0" step="1" value="${Number(price)||0}"></div>
     </div>
+    <div class="field"><label>Onderhoudsstatus</label><select name="serviceStatus"><option value="active" ${!s.serviceStatus || s.serviceStatus==='active'?'selected':''}>Actief onderhoud</option><option value="paused" ${s.serviceStatus==='paused'?'selected':''}>Klant wil later</option><option value="declined" ${s.serviceStatus==='declined'?'selected':''}>Klant wil geen onderhoud</option></select></div>
     <div class="field status-later ${s.serviceStatus==='paused'?'show':''}"><label>Opnieuw benaderen op</label><input name="pausedUntil" type="date" value="${s.pausedUntil||''}"></div>
+    <div class="field"><label>Opvolgstatus</label><select name="contactStatus">${['not_contacted','contacted','responded','scheduled','completed'].map(v=>`<option value="${v}" ${contactStatus===v?'selected':''}>${contactStatusLabel(v)}</option>`).join('')}</select></div>
     <div class="field"><label>Statusnotitie</label><textarea name="statusNote" rows="2" placeholder="Bijv. klant wil na vakantie gebeld worden">${esc(s.statusNote||'')}</textarea></div>
-    <label><input type="checkbox" name="reminderCompany" ${s.reminderCompany!==false?'checked':''}> Herinner mij / mijn bedrijf</label>
-    <label><input type="checkbox" name="reminderCustomer" ${s.reminderCustomer!==false?'checked':''}> Herinner ook de klant</label>
+    <label><input type="checkbox" name="reminderCompany" ${s.reminderCompany!==false?'checked':''}> Toon in mijn actielijst</label>
+    <label><input type="checkbox" name="reminderCustomer" ${s.reminderCustomer!==false?'checked':''}> Klant mag een herinnering ontvangen</label>
   </div>`;
 }
 
@@ -670,19 +774,10 @@ function toggleStatusLater(form){
   const wrap = form.pausedUntil?.closest('.status-later');
   if(wrap) wrap.classList.toggle('show', form.serviceStatus?.value === 'paused');
   if(form.serviceStatus && form.interval){
-    if(form.serviceStatus.value === 'declined'){
-      form.interval.value = '0';
-      form.interval.disabled = true;
-    }else if(form.serviceStatus.value === 'paused'){
-      form.interval.disabled = false;
-      if(form.interval.dataset.lastStatus !== 'paused') form.interval.value = '0';
-    }else{
-      form.interval.disabled = false;
-      if(form.interval.value === '0') form.interval.value = '12';
-    }
-    form.interval.dataset.lastStatus = form.serviceStatus.value;
+    form.interval.disabled = form.serviceStatus.value === 'declined';
   }
 }
+
 function wireSystemForm(form, currentModel=''){
   form.brand.onchange=()=>{ toggleOtherBrand(form); refreshModelOptions(form); };
   form.model.onchange=()=>toggleOtherModel(form);
@@ -711,7 +806,7 @@ function editCustomer(id){
       </article>
       <article class="card">
         <h2>Geplaatste systemen</h2>
-        ${systems.map(s=>`<div class="edit-system-card"><div class="row between"><div><p class="title">${s.type==='warmtepomp'?'♨️ Warmtepomp':'❄️ Airco'}</p><p class="muted">${s.brand} ${s.model}</p><p class="muted">Volgend onderhoud: ${fmt(nextDate(s))}</p></div><button type="button" class="edit-btn" onclick="nav('editSystem',{systemId:'${s.id}',back:'editCustomer'})">✏️</button></div></div>`).join('') || '<p class="muted">Nog geen systemen.</p>'}
+        ${systems.map(s=>`<div class="edit-system-card"><div class="row between"><div><p class="title">${s.type==='warmtepomp'?'♨️ Warmtepomp':'❄️ Airco'}</p><p class="muted">${esc(s.brand)} ${esc(s.model)}</p><p class="muted">Volgend onderhoud: ${fmt(nextDate(s))}</p></div><button type="button" class="edit-btn" onclick="nav('editSystem',{systemId:'${s.id}',back:'editCustomer'})">✏️</button></div></div>`).join('') || '<p class="muted">Nog geen systemen.</p>'}
       </article>
       <button class="primary" type="submit">Klant opslaan</button><button class="danger" type="button" onclick="deleteCustomer(\'${c.id}\')">🗑 Klant verwijderen</button>
     </form>
@@ -745,18 +840,18 @@ function editSystem(id){
     s.model=selectedModel(f);
     s.serial=f.serial.value.trim();
     s.installedAt=f.installedAt.value;
-    s.installTime=f.installTime ? (f.installTime.value || '09:00') : (s.installTime || '09:00');
     s.serviceStatus=f.serviceStatus.value;
-    s.interval=s.serviceStatus==='declined' ? 0 : Number(f.interval.value);
-    s.pausedUntil=f.serviceStatus.value==='paused' ? (f.pausedUntil.value || null) : null;
-    s.statusNote=f.statusNote.value.trim();
-    if(s.serviceStatus==='declined') state.appointments=appointments().filter(a=>a.systemId!==s.id);
-    s.serviceStatus=f.serviceStatus.value;
-    s.interval=s.serviceStatus==='declined' ? 0 : Number(f.interval.value);
-    s.pausedUntil=f.serviceStatus.value==='paused' ? (f.pausedUntil.value || null) : null;
+    s.interval=Number(f.interval.value||state.settings.defaultInterval||12);
+    s.maintenancePrice=Number(f.maintenancePrice.value||0);
+    s.pausedUntil=s.serviceStatus==='paused' ? (f.pausedUntil.value || null) : null;
+    s.contactStatus=f.contactStatus.value;
     s.statusNote=f.statusNote.value.trim();
     s.reminderCompany=f.reminderCompany.checked;
     s.reminderCustomer=f.reminderCustomer.checked;
+    if(s.serviceStatus==='declined'){
+      state.appointments=appointments().filter(a=>a.systemId!==s.id);
+      s.contactStatus='completed';
+    }
     save();
     nav('detail',{customerId:s.customerId,back:'customers'});
   };
@@ -772,7 +867,7 @@ function newInstall(){
           <label>Bestaande klant</label>
           <select name="existing">
             <option value="">Nieuwe klant</option>
-            ${state.customers.map(c=>`<option value="${c.id}" ${c.id===selected?'selected':''}>${c.name}</option>`).join('')}
+            ${state.customers.map(c=>`<option value="${c.id}" ${c.id===selected?'selected':''}>${esc(c.name)}</option>`).join('')}
           </select>
         </div>
         <div class="field"><label>Klantnaam</label><input name="name" placeholder="Bijv. Fam. Jansen"></div>
@@ -783,7 +878,7 @@ function newInstall(){
         </div>
         <div class="field"><label>Memo klant</label><textarea name="memo" rows="3" placeholder="Bijv. klant wil alleen in de ochtend, sleutel bij buren, hond aanwezig..."></textarea></div>
       </div>
-      ${systemFormFields({type:'airco',brand:'Daikin',model:'Emura',serial:'',installedAt:'',interval:12,reminderCompany:true,reminderCustomer:true})}
+      ${systemFormFields({type:'airco',brand:'Daikin',model:'Emura',serial:'',installedAt:todayKey(),interval:state.settings.defaultInterval,maintenancePrice:state.settings.maintenancePrice,reminderCompany:true,reminderCustomer:true})}
       <button class="primary" type="submit">Opslaan</button>
     </form>
   </section>`;
@@ -804,20 +899,21 @@ function newInstall(){
     e.preventDefault();
     let cid=f.existing.value;
     if(!cid){
-      const c={id:crypto.randomUUID(),name:f.name.value||'Nieuwe klant',address:f.address.value,postalCode:f.postalCode.value,city:f.city.value,phone:f.phone.value,email:f.email.value,memo:f.memo ? f.memo.value.trim() : ''};
+      const c={id:uid(),name:f.name.value.trim()||'Nieuwe klant',address:f.address.value,postalCode:f.postalCode.value,city:f.city.value,phone:f.phone.value,email:f.email.value,memo:f.memo ? f.memo.value.trim() : ''};
       state.customers.push(c);
       cid=c.id;
     }
-    const s=makeSystem(cid,f.type.value,selectedBrand(f),selectedModel(f),f.serial.value,f.installedAt.value,f.interval.value,f.installTime.value || '09:00');
+    const s=makeSystem(cid,f.type.value,selectedBrand(f),selectedModel(f),f.serial.value,f.installedAt.value,f.interval.value);
     s.serviceStatus=f.serviceStatus.value;
-    s.interval=s.serviceStatus==='declined' ? 0 : Number(f.interval.value);
-    s.pausedUntil=f.serviceStatus.value==='paused' ? (f.pausedUntil.value || null) : null;
+    s.interval=Number(f.interval.value||state.settings.defaultInterval||12);
+    s.maintenancePrice=Number(f.maintenancePrice.value||0);
+    s.pausedUntil=s.serviceStatus==='paused' ? (f.pausedUntil.value || null) : null;
+    s.contactStatus=f.contactStatus.value;
     s.statusNote=f.statusNote.value.trim();
     s.reminderCompany=f.reminderCompany.checked;
     s.reminderCustomer=f.reminderCustomer.checked;
+    if(s.serviceStatus==='declined') s.contactStatus='completed';
     state.systems.push(s);
-    autoCreatePlacementAppointment(s, cid);
-    autoCreateMaintenanceAppointment(s, cid);
     save();
     nav('detail',{customerId:cid,back:'customers'});
   };
@@ -850,12 +946,16 @@ function newAppointment(){
           <select name="customerId" required>
             <option value="">Kies klant</option>
             <option value="__new__">+ Nieuwe klant</option>
-            ${state.customers.map(c=>`<option value="${c.id}" ${c.id===customerId?'selected':''}>${c.name}</option>`).join('')}
+            ${state.customers.map(c=>`<option value="${c.id}" ${c.id===customerId?'selected':''}>${esc(c.name)}</option>`).join('')}
           </select>
         </div>
         <div class="new-customer-fields">
           <div class="field"><label>Nieuwe klantnaam</label><input name="newName" placeholder="Bijv. Fam. Jansen"></div>
-          <div class="field"><label>Adres</label><input name="newAddress" placeholder="Straat, plaats"></div>
+          <div class="field"><label>Straat + huisnummer</label><input name="newAddress" placeholder="Bijv. Kerkstraat 12"></div>
+          <div class="two">
+            <div class="field"><label>Postcode</label><input name="newPostalCode" placeholder="1234 AB"></div>
+            <div class="field"><label>Plaats</label><input name="newCity" placeholder="Plaats"></div>
+          </div>
           <div class="two">
             <div class="field"><label>Telefoon</label><input name="newPhone" placeholder="06..."></div>
             <div class="field"><label>E-mail</label><input name="newEmail" placeholder="mail@..."></div>
@@ -885,7 +985,7 @@ function newAppointment(){
     let appointmentCustomerId=f.customerId.value;
     if(appointmentCustomerId==='__new__'){
       const newCustomer={
-        id:crypto.randomUUID(),
+        id:uid(),
         name:f.newName.value.trim() || 'Nieuwe klant',
         address:f.newAddress.value.trim(),
         postalCode:f.newPostalCode.value.trim(),
@@ -906,9 +1006,8 @@ function newAppointment(){
       existing.note=f.note.value.trim();
     }else{
       state.appointments.push({
-        id:crypto.randomUUID(),
+        id:uid(),
         type:f.type.value,
-        status:'gepland',
         customerId:appointmentCustomerId,
         systemId:null,
         date:f.date.value,
@@ -942,9 +1041,9 @@ function planAppointment(systemId){
   app.innerHTML = `<section class="screen">
     <form class="form" id="appointmentForm">
       <article class="card">
-        <p class="title">${c.name}</p>
-        <p class="muted">${s.brand} ${s.model}</p>
-        <p class="muted">📍 ${fullAddress(c)}</p>
+        <p class="title">${esc(c.name)}</p>
+        <p class="muted">${esc(s.brand)} ${esc(s.model)}</p>
+        <p class="muted">📍 ${esc(fullAddress(c))}</p>
       </article>
       <article class="card form">
         <h2>Afspraak</h2>
@@ -965,8 +1064,9 @@ function planAppointment(systemId){
       existing.time=f.time.value;
       existing.note=f.note.value.trim();
     }else{
-      state.appointments.push({id:crypto.randomUUID(),type:'onderhoud',status:'gepland',customerId:s.customerId,systemId,date:f.date.value,time:f.time.value,note:f.note.value.trim()});
+      state.appointments.push({id:uid(),type:'onderhoud',customerId:s.customerId,systemId,date:f.date.value,time:f.time.value,note:f.note.value.trim()});
     }
+    s.contactStatus='scheduled';
     save();
     selectedAgendaDate=f.date.value;
     calendarMonth=new Date(f.date.value+'T12:00:00');
@@ -977,18 +1077,25 @@ function planAppointment(systemId){
 function deleteAppointment(id, systemId){
   if(!confirm('Afspraak verwijderen?')) return;
   state.appointments = appointments().filter(a=>a.id!==id);
-  save();
   const s=systemById(systemId);
+  if(s && !appointmentForSystem(s.id)) s.contactStatus='contacted';
+  save();
   nav('detail',{customerId:s?s.customerId:null,back:'customers'});
 }
 
 function markDone(id){
   const s=systemById(id);
   if(!s) return;
-  s.lastService=todayKey();
+  const performed=prompt('Op welke datum is het onderhoud uitgevoerd?',todayKey());
+  if(performed===null) return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(performed)){ alert('Vul een geldige datum in als JJJJ-MM-DD.'); return; }
+  s.lastService=performed;
   s.doneCount=(s.doneCount||0)+1;
+  s.contactStatus='not_contacted';
+  s.lastContactAt=null;
   state.appointments = appointments().filter(a=>a.systemId!==id);
   save();
+  alert(`Onderhoud afgerond. Volgend onderhoud: ${fmt(nextDate(s))}.`);
   render();
 }
 
@@ -1001,18 +1108,331 @@ function deleteSystem(id){
 }
 
 function settings(){
+  const lastUpdate=state.updatedAt ? new Date(state.updatedAt).toLocaleString('nl-NL') : 'Nog niet opgeslagen';
   app.innerHTML = `<section class="screen">
+    <article class="card pilot-banner">
+      <p class="title">${APP_VERSION}</p>
+      <p class="muted">Pilotmodus: gegevens staan op dit apparaat. Maak regelmatig een back-up. Online accounts en automatische verzending volgen pas in een serverversie.</p>
+    </article>
+
+    <form class="form" id="settingsForm">
+      <article class="card form">
+        <h2>Bedrijfsprofiel</h2>
+        <div class="field"><label>Bedrijfsnaam</label><input name="companyName" value="${esc(state.settings.companyName)}" required></div>
+        <div class="field"><label>Naam voor begroeting</label><input name="contactName" value="${esc(state.settings.contactName)}" placeholder="Bijv. Ike"></div>
+        <div class="two">
+          <div class="field"><label>Standaard onderhoudsprijs (€)</label><input name="maintenancePrice" type="number" min="0" step="1" value="${Number(state.settings.maintenancePrice)||0}"></div>
+          <div class="field"><label>Actielijst vanaf</label><select name="leadDays">
+            ${[30,45,60,90].map(v=>`<option value="${v}" ${Number(state.settings.leadDays)===v?'selected':''}>${v} dagen vooraf</option>`).join('')}
+          </select></div>
+        </div>
+        <div class="field"><label>Standaard onderhoudsinterval</label><select name="defaultInterval">${[6,12,18,24].map(v=>`<option value="${v}" ${Number(state.settings.defaultInterval)===v?'selected':''}>${v} maanden</option>`).join('')}</select></div>
+        <div class="field"><label>WhatsApp-bericht</label><textarea name="whatsappTemplate" rows="5">${esc(state.settings.whatsappTemplate)}</textarea><p class="helper">Beschikbaar: {naam}, {bedrijf}, {datum} en {systeem}.</p></div>
+        <button class="primary" type="submit">Instellingen opslaan</button>
+      </article>
+    </form>
+
     <article class="card">
-      <p class="title">Instellingen</p>
-      <p class="muted">v0.6 werkt lokaal met localStorage. Supabase/login en automatische e-mails komen later.</p>
-      <button class="danger" onclick="resetDemo()">Reset demo-data</button>
+      <h2>Klanten importeren</h2>
+      <p class="muted">Importeer een Excel- of CSV-bestand met klanten en installaties. Download eerst het voorbeeldbestand voor de juiste kolommen.</p>
+      <div class="settings-actions">
+        <button class="secondary" onclick="downloadImportTemplate()">⬇ Voorbeeldbestand</button>
+        <button class="secondary" onclick="document.getElementById('sheetImport').click()">⬆ Excel / CSV importeren</button>
+      </div>
+      <input id="sheetImport" class="hidden-input" type="file" accept=".xlsx,.xls,.csv,text/csv" onchange="importSpreadsheetFile(this.files[0]);this.value=''">
+    </article>
+
+    <article class="card">
+      <h2>Back-up en overdracht</h2>
+      <p class="muted">${state.customers.length} klanten · ${state.systems.length} systemen · ${appointments().length} afspraken</p>
+      <p class="helper">Laatst opgeslagen: ${lastUpdate}</p>
+      <div class="settings-actions">
+        <button class="secondary" onclick="exportBackup()">⬇ Volledige back-up</button>
+        <button class="secondary" onclick="document.getElementById('backupImport').click()">⬆ Back-up terugzetten</button>
+        <button class="secondary" onclick="exportOverviewExcel()">📊 Overzicht exporteren</button>
+      </div>
+      <input id="backupImport" class="hidden-input" type="file" accept="application/json,.json" onchange="importBackupFile(this.files[0]);this.value=''">
+    </article>
+
+    <article class="card">
+      <h2>App en meldingen</h2>
+      <div class="settings-actions">
+        <button class="secondary" onclick="enableNotifications()">🔔 Browsermeldingen inschakelen</button>
+        <button class="secondary" id="installAppBtn" onclick="installApp()" ${deferredInstallPrompt?'':'disabled'}>📲 App installeren</button>
+      </div>
+      <p class="helper">Browsermeldingen worden gecontroleerd wanneer de app wordt geopend. Ze vervangen nog geen servergestuurde e-mail of WhatsApp.</p>
+    </article>
+
+    <article class="card danger-zone">
+      <h2>Gevarenzone</h2>
+      <button class="danger full-width" onclick="resetDemo()">Alle lokale gegevens wissen</button>
     </article>
   </section>`;
+
+  const f=$('#settingsForm');
+  f.onsubmit=(e)=>{
+    e.preventDefault();
+    state.settings.companyName=f.companyName.value.trim()||'Onderhoudsbedrijf';
+    state.settings.contactName=f.contactName.value.trim();
+    state.settings.maintenancePrice=Number(f.maintenancePrice.value||0);
+    state.settings.leadDays=Number(f.leadDays.value||45);
+    state.settings.defaultInterval=Number(f.defaultInterval.value||12);
+    state.settings.whatsappTemplate=f.whatsappTemplate.value.trim()||DEFAULT_SETTINGS.whatsappTemplate;
+    save();
+    alert('Instellingen opgeslagen.');
+    render();
+  };
 }
 
+function downloadBlob(content,filename,type='application/octet-stream'){
+  const blob=content instanceof Blob?content:new Blob([content],{type});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function fileDate(){ return todayKey().replaceAll('-',''); }
+function exportBackup(){
+  save();
+  downloadBlob(JSON.stringify({app:'OnderhoudPlanner',version:APP_VERSION,exportedAt:new Date().toISOString(),data:state},null,2),`onderhoudplanner-backup-${fileDate()}.json`,'application/json');
+}
+async function importBackupFile(file){
+  if(!file) return;
+  try{
+    const parsed=JSON.parse(await file.text());
+    const incoming=parsed.data||parsed;
+    if(!Array.isArray(incoming.customers)||!Array.isArray(incoming.systems)) throw new Error('Geen geldige OnderhoudPlanner-back-up');
+    if(!confirm(`Deze back-up bevat ${incoming.customers.length} klanten en ${incoming.systems.length} systemen. Huidige gegevens vervangen?`)) return;
+    state=normalizeState(incoming); save(); nav('dashboard'); alert('Back-up is teruggezet.');
+  }catch(e){ alert(`Back-up importeren mislukt: ${e.message}`); }
+}
+function templateRows(){
+  return [{
+    klantnaam:'Fam. Jansen',straat:'Kerkstraat 12',postcode:'1234 AB',plaats:'Rotterdam',telefoon:'0612345678',email:'jansen@example.nl',memo:'Alleen in de ochtend',
+    type:'airco',merk:'Daikin',model:'Perfera',serienummer:'ABC123',installatiedatum:todayKey(),interval_maanden:12,
+    onderhoudsstatus:'actief',laatste_onderhoud:'',opvolgstatus:'nog benaderen',onderhoudsprijs:129
+  }];
+}
+function downloadImportTemplate(){
+  const rows=templateRows();
+  const headers=Object.keys(rows[0]);
+  const quote=v=>`"${String(v??'').replaceAll('"','""')}"`;
+  const csv=[headers.join(';'),headers.map(h=>quote(rows[0][h])).join(';')].join('\n');
+  downloadBlob('\ufeff'+csv,'onderhoudplanner-import-voorbeeld.csv','text/csv;charset=utf-8');
+}
+
+function normalizeHeader(v=''){
+  return String(v).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+}
+function normalizeRow(row){
+  const out={}; Object.entries(row||{}).forEach(([k,v])=>out[normalizeHeader(k)]=v); return out;
+}
+function parseCsv(text){
+  const delimiter=(text.split('\n')[0].match(/;/g)||[]).length >= (text.split('\n')[0].match(/,/g)||[]).length ? ';' : ',';
+  const rows=[]; let row=[],cell='',quoted=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i],next=text[i+1];
+    if(ch==='"' && quoted && next==='"'){cell+='"';i++;continue;}
+    if(ch==='"'){quoted=!quoted;continue;}
+    if(ch===delimiter&&!quoted){row.push(cell);cell='';continue;}
+    if((ch==='\n'||ch==='\r')&&!quoted){
+      if(ch==='\r'&&next==='\n') i++;
+      row.push(cell);cell=''; if(row.some(v=>String(v).trim())) rows.push(row); row=[]; continue;
+    }
+    cell+=ch;
+  }
+  row.push(cell); if(row.some(v=>String(v).trim())) rows.push(row);
+  if(!rows.length) return [];
+  const headers=rows.shift().map(normalizeHeader);
+  return rows.map(values=>Object.fromEntries(headers.map((h,i)=>[h,values[i]??''])));
+}
+async function inflateRaw(bytes){
+  if(!('DecompressionStream' in globalThis)) throw new Error('Deze browser kan Excel-bestanden niet lokaal uitpakken. Gebruik CSV.');
+  const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+async function readZipEntries(buffer){
+  const bytes=new Uint8Array(buffer), view=new DataView(buffer);
+  let eocd=-1;
+  for(let i=bytes.length-22;i>=Math.max(0,bytes.length-65557);i--){
+    if(view.getUint32(i,true)===0x06054b50){eocd=i;break;}
+  }
+  if(eocd<0) throw new Error('Ongeldig Excel-bestand.');
+  const total=view.getUint16(eocd+10,true), centralOffset=view.getUint32(eocd+16,true);
+  const decoder=new TextDecoder('utf-8');
+  const entries=new Map(); let p=centralOffset;
+  for(let n=0;n<total;n++){
+    if(view.getUint32(p,true)!==0x02014b50) break;
+    const method=view.getUint16(p+10,true), compressedSize=view.getUint32(p+20,true);
+    const nameLen=view.getUint16(p+28,true), extraLen=view.getUint16(p+30,true), commentLen=view.getUint16(p+32,true);
+    const localOffset=view.getUint32(p+42,true);
+    const name=decoder.decode(bytes.slice(p+46,p+46+nameLen));
+    const localNameLen=view.getUint16(localOffset+26,true), localExtraLen=view.getUint16(localOffset+28,true);
+    const dataStart=localOffset+30+localNameLen+localExtraLen;
+    entries.set(name,{method,data:bytes.slice(dataStart,dataStart+compressedSize)});
+    p+=46+nameLen+extraLen+commentLen;
+  }
+  const read=async name=>{
+    const entry=entries.get(name); if(!entry) return null;
+    if(entry.method===0) return entry.data;
+    if(entry.method===8) return inflateRaw(entry.data);
+    throw new Error(`Niet-ondersteunde Excel-compressie (${entry.method}).`);
+  };
+  return {entries,read};
+}
+function xmlText(node){ return [...node.querySelectorAll('t')].map(n=>n.textContent||'').join(''); }
+function columnIndex(ref='A1'){
+  const letters=(ref.match(/[A-Z]+/i)||['A'])[0].toUpperCase();
+  let value=0; for(const ch of letters) value=value*26+ch.charCodeAt(0)-64; return value-1;
+}
+async function readXlsxRows(buffer){
+  const zip=await readZipEntries(buffer);
+  const decoder=new TextDecoder('utf-8');
+  let shared=[];
+  const sharedBytes=await zip.read('xl/sharedStrings.xml');
+  if(sharedBytes){
+    const doc=new DOMParser().parseFromString(decoder.decode(sharedBytes),'application/xml');
+    shared=[...doc.querySelectorAll('si')].map(xmlText);
+  }
+  const sheets=[...zip.entries.keys()].filter(n=>/^xl\/worksheets\/sheet\d+\.xml$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+  if(!sheets.length) throw new Error('Geen werkblad gevonden.');
+  const sheetBytes=await zip.read(sheets[0]);
+  const doc=new DOMParser().parseFromString(decoder.decode(sheetBytes),'application/xml');
+  const matrix=[];
+  [...doc.querySelectorAll('sheetData row')].forEach(rowNode=>{
+    const row=[];
+    [...rowNode.querySelectorAll(':scope > c')].forEach(cellNode=>{
+      const index=columnIndex(cellNode.getAttribute('r')||'A1');
+      const type=cellNode.getAttribute('t')||'';
+      let value='';
+      if(type==='inlineStr') value=xmlText(cellNode);
+      else{
+        value=cellNode.querySelector('v')?.textContent??'';
+        if(type==='s') value=shared[Number(value)]??'';
+        if(type==='b') value=value==='1'?'ja':'nee';
+      }
+      row[index]=value;
+    });
+    matrix.push(row);
+  });
+  if(!matrix.length) return [];
+  const headers=matrix.shift().map(normalizeHeader);
+  return matrix.filter(r=>r.some(v=>String(v??'').trim())).map(values=>Object.fromEntries(headers.map((h,i)=>[h,values[i]??''])));
+}
+
+function parseImportedDate(value){
+  if(!value) return '';
+  if(value instanceof Date && !isNaN(value)) return toDateKey(value);
+  if(typeof value==='number'){
+    const d=new Date(Date.UTC(1899,11,30)+Math.round(value)*86400000);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+  }
+  const text=String(value).trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0,10);
+  const m=text.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);
+  if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  const d=new Date(text); return isNaN(d)?'':toDateKey(d);
+}
+function mapServiceStatus(value){
+  const v=normalizeHeader(value); if(['geen_onderhoud','geweigerd','declined','nee'].includes(v)) return 'declined'; if(['later','pauze','paused'].includes(v)) return 'paused'; return 'active';
+}
+function mapContactStatus(value){
+  const v=normalizeHeader(value);
+  if(['bericht_verstuurd','verstuurd','contacted'].includes(v)) return 'contacted';
+  if(['reactie_ontvangen','reactie','responded'].includes(v)) return 'responded';
+  if(['ingepland','scheduled'].includes(v)) return 'scheduled';
+  if(['afgerond','completed'].includes(v)) return 'completed';
+  return 'not_contacted';
+}
+function cell(row,...keys){ for(const key of keys){ const value=row[normalizeHeader(key)]; if(value!==undefined&&String(value).trim()!=='') return value; } return ''; }
+function importRows(rows){
+  let customersAdded=0,systemsAdded=0,skipped=0;
+  const customerIndex=new Map();
+  state.customers.forEach(c=>{
+    const key=(c.email||'').toLowerCase() || (c.phone||'').replace(/\D/g,'') || normalizeHeader(`${c.name}_${c.address}`);
+    if(key) customerIndex.set(key,c);
+  });
+  rows.map(normalizeRow).forEach(row=>{
+    const name=String(cell(row,'klantnaam','naam','customer','customer_name')).trim();
+    if(!name){skipped++;return;}
+    const address=String(cell(row,'straat','adres','address')).trim();
+    const phone=String(cell(row,'telefoon','phone','mobiel')).trim();
+    const email=String(cell(row,'email','e_mail')).trim();
+    const key=email.toLowerCase() || phone.replace(/\D/g,'') || normalizeHeader(`${name}_${address}`);
+    let c=customerIndex.get(key);
+    if(!c){
+      c={id:uid(),name,address,postalCode:String(cell(row,'postcode','postal_code')).trim(),city:String(cell(row,'plaats','woonplaats','city')).trim(),phone,email,memo:String(cell(row,'memo','notitie')).trim()};
+      state.customers.push(c); customerIndex.set(key,c); customersAdded++;
+    }
+    const brand=String(cell(row,'merk','brand')).trim();
+    const model=String(cell(row,'model')).trim();
+    const serial=String(cell(row,'serienummer','serial','serial_number')).trim();
+    if(!brand&&!model&&!serial) return;
+    const installedAt=parseImportedDate(cell(row,'installatiedatum','installatie_datum','installed_at'))||todayKey();
+    const duplicate=state.systems.some(s=>s.customerId===c.id && ((serial&&s.serial===serial)||(!serial&&s.brand===brand&&s.model===model&&s.installedAt===installedAt)));
+    if(duplicate){skipped++;return;}
+    const interval=Number(cell(row,'interval_maanden','interval','onderhoudsinterval'))||state.settings.defaultInterval||12;
+    const sys=makeSystem(c.id,normalizeHeader(cell(row,'type'))==='warmtepomp'?'warmtepomp':'airco',brand||'Onbekend',model||'Onbekend',serial,installedAt,interval);
+    sys.serviceStatus=mapServiceStatus(cell(row,'onderhoudsstatus','service_status'));
+    sys.lastService=parseImportedDate(cell(row,'laatste_onderhoud','last_service'))||null;
+    sys.contactStatus=mapContactStatus(cell(row,'opvolgstatus','contactstatus','contact_status'));
+    const price=Number(String(cell(row,'onderhoudsprijs','prijs','maintenance_price')).replace(',','.'));
+    sys.maintenancePrice=Number.isFinite(price)&&price>=0?price:null;
+    state.systems.push(sys); systemsAdded++;
+  });
+  save(); return {customersAdded,systemsAdded,skipped};
+}
+async function importSpreadsheetFile(file){
+  if(!file) return;
+  try{
+    let rows=[];
+    if(/\.csv$/i.test(file.name)) rows=parseCsv(await file.text());
+    else rows=await readXlsxRows(await file.arrayBuffer());
+    if(!rows.length) throw new Error('Geen gegevensrijen gevonden.');
+    const result=importRows(rows);
+    alert(`Import klaar: ${result.customersAdded} klanten en ${result.systemsAdded} systemen toegevoegd. ${result.skipped} rijen overgeslagen of al aanwezig.`);
+    nav('customers');
+  }catch(e){ alert(`Importeren mislukt: ${e.message}`); }
+}
+function exportRows(){
+  return state.systems.map(s=>{
+    const c=customer(s.customerId)||{};
+    return {klantnaam:c.name,straat:c.address,postcode:c.postalCode,plaats:c.city,telefoon:c.phone,email:c.email,memo:c.memo,type:s.type,merk:s.brand,model:s.model,serienummer:s.serial,installatiedatum:s.installedAt,laatste_onderhoud:s.lastService||'',volgend_onderhoud:nextDate(s),interval_maanden:s.interval,onderhoudsstatus:s.serviceStatus,opvolgstatus:contactStatusLabel(s.contactStatus),onderhoudsprijs:systemPrice(s)};
+  });
+}
+function exportOverviewExcel(){
+  const rows=exportRows();
+  if(!rows.length){alert('Er zijn nog geen systemen om te exporteren.');return;}
+  const headers=Object.keys(rows[0]);
+  const quote=v=>`"${String(v??'').replaceAll('"','""')}"`;
+  const csv=[headers.join(';'),...rows.map(r=>headers.map(h=>quote(r[h])).join(';'))].join('\n');
+  downloadBlob('\ufeff'+csv,`onderhoudplanner-overzicht-${fileDate()}.csv`,'text/csv;charset=utf-8');
+}
+
+async function enableNotifications(){
+  if(!('Notification' in window)){alert('Deze browser ondersteunt geen meldingen.');return;}
+  const permission=await Notification.requestPermission();
+  if(permission==='granted'){
+    new Notification('OnderhoudPlanner',{body:`${actionSystems().length} onderhoudsmomenten vragen aandacht.`,icon:'icon-192.png'});
+  }else alert('Meldingen zijn niet toegestaan in de browserinstellingen.');
+}
+function checkDueNotification(){
+  if('Notification' in window && Notification.permission==='granted'){
+    const due=actionSystems().filter(s=>daysUntil(nextDate(s))<=0).length;
+    const last=localStorage.getItem(`${KEY}_last_notification`);
+    if(due>0 && last!==todayKey()){
+      new Notification('OnderhoudPlanner',{body:`${due} onderhoudsmoment${due===1?'':'en'} zijn nu of eerder gepland.`,icon:'icon-192.png'});
+      localStorage.setItem(`${KEY}_last_notification`,todayKey());
+    }
+  }
+}
+async function installApp(){
+  if(!deferredInstallPrompt){alert('Open de app via Chrome of Edge en gebruik zo nodig “App installeren” in het browsermenu.');return;}
+  deferredInstallPrompt.prompt(); await deferredInstallPrompt.userChoice; deferredInstallPrompt=null; render();
+}
 function resetDemo(){
+  if(!confirm('Alle klanten, systemen, afspraken en instellingen op dit apparaat verwijderen?')) return;
   localStorage.removeItem(KEY);
-  state = {company:'Airco Service', customers:[], systems:[], appointments:[]};
+  state = normalizeState(structuredClone(demoState));
   save();
   nav('dashboard');
 }
@@ -1028,5 +1448,17 @@ function deleteCustomer(id){
   nav('customers');
 }
 
-Object.assign(window,{nav,changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,deleteCustomer,setAppointmentStatus,completeAppointment,resetDemo,deleteAppointment,deleteGenericAppointment});
+Object.assign(window,{
+  nav,changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,deleteCustomer,resetDemo,
+  deleteAppointment,deleteGenericAppointment,markContacted,setContactStatus,downloadImportTemplate,
+  importSpreadsheetFile,exportBackup,importBackupFile,exportOverviewExcel,enableNotifications,installApp
+});
+
+notifyBtn.onclick=()=>nav('notifications');
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPrompt=e;});
+window.addEventListener('appinstalled',()=>{deferredInstallPrompt=null;});
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./service-worker.js').catch(err=>console.warn('Service worker niet actief',err)));
+}
 render();
+setTimeout(checkDueNotification,800);

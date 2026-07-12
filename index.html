@@ -3,24 +3,29 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0757c8" />
+  <meta name="description" content="OnderhoudPlanner voor airco- en warmtepompinstallateurs." />
   <title>OnderhoudPlanner</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon-192.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <button class="icon-btn" id="backBtn" hidden>←</button>
+      <button class="icon-btn" id="backBtn" aria-label="Terug" hidden>←</button>
       <div>
         <p class="eyebrow">OnderhoudPlanner</p>
         <h1 id="pageTitle">Dashboard</h1>
       </div>
-      <button class="icon-btn" id="notifyBtn">🔔</button>
+      <button class="icon-btn" id="notifyBtn" aria-label="Open onderhoudsactielijst">🔔</button>
     </header>
 
     <main id="app"></main>
-    <button id="fabAdd" class="fab-add">+</button>
+    <button id="fabAdd" class="fab-add" aria-label="Nieuwe installatie toevoegen">+</button>
 
-    <nav class="bottom-nav">
+    <nav class="bottom-nav" aria-label="Hoofdnavigatie">
       <button data-route="dashboard" class="active">▦<span>Dashboard</span></button>
       <button data-route="customers">👥<span>Klanten</span></button>
       <button data-route="agenda">📅<span>Agenda</span></button>

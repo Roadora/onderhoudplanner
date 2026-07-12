@@ -121,8 +121,47 @@ textarea{resize:vertical}
 /* Klant adresvelden + verwijderen v1 */
 button.danger[type="button"]{width:100%;}
 
-.field-hint{font-size:12px;color:var(--muted);margin:6px 0 0;line-height:1.35}
-
 .dashboard-greeting{font-size:24px;margin:0 0 6px}
 
-.detail-action-grid{display:grid;grid-template-columns:1fr;gap:10px;margin:12px 0}
+/* Pilot v0.7 */
+.grow{flex:1;min-width:0}
+.card-meta{margin-top:12px}
+.block-gap{margin-top:12px}
+.full-width{width:100%}
+.hidden-input{display:none}
+.helper{font-size:12px;color:var(--muted);line-height:1.45;margin:8px 0 0}
+.disabled,[aria-disabled="true"]{opacity:.45;pointer-events:none}
+button:disabled{opacity:.45;cursor:not-allowed}
+
+.revenue-card{margin-top:12px;background:linear-gradient(145deg,#083b7a,#0757c8);color:#fff;border:0}
+.revenue-card .muted,.revenue-card .helper{color:rgba(255,255,255,.76)}
+.revenue-number{font-size:32px;font-weight:900;margin:3px 0 0}
+.revenue-icon{width:46px;height:46px;border-radius:15px;background:rgba(255,255,255,.15);display:grid;place-items:center;font-size:24px;font-weight:900}
+.revenue-split{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
+.revenue-split span{background:rgba(255,255,255,.12);border-radius:12px;padding:10px;font-size:12px}
+.revenue-split b{display:block;font-size:16px;margin-top:4px}
+
+.action-card .actions{margin-top:10px}
+.status-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
+.status-row>span{font-weight:900;color:var(--blue);white-space:nowrap}
+.status-row small{color:var(--muted)}
+.status-select{max-width:220px;width:100%;border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;color:#344054;font-weight:700}
+.status-badge.neutral{background:#f2f4f7;color:#475467}
+.status-badge.info{background:#eef4ff;color:#3538cd}
+.status-badge.done{background:#ecfdf3;color:#067647}
+
+.filter-chips{display:flex;gap:8px;overflow:auto;padding:0 0 12px;scrollbar-width:none}
+.filter-chips::-webkit-scrollbar{display:none}
+.chip{border:1px solid var(--line);background:#fff;color:#475467;border-radius:999px;padding:10px 13px;font-weight:800;white-space:nowrap}
+.chip.active{background:#e8f0ff;color:var(--blue);border-color:#bcd2ff}
+
+.pilot-banner{border-left:5px solid var(--orange)}
+.settings-actions{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}
+.settings-actions .secondary{width:100%}
+.danger-zone{border-color:#fecaca;background:#fffafa}
+.secondary-primary{margin-top:10px;background:#edf4ff;color:var(--blue);box-shadow:none}
+
+@media (min-width:380px){
+  .settings-actions{grid-template-columns:1fr 1fr}
+  .settings-actions>*:last-child:nth-child(3){grid-column:1/-1}
+}

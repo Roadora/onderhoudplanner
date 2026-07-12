@@ -1,11 +1,13 @@
 import './styles.css';
 import { registerServiceWorker } from './pwa.js';
 import { bootstrapAuth } from './auth/auth-controller.js';
+import { bootstrapCloudData } from './data/cloud-repository.js';
 
 registerServiceWorker();
 
 bootstrapAuth({
   onAuthenticated: async () => {
+    await bootstrapCloudData();
     await import('./app.js');
   }
 }).catch(error => {

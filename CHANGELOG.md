@@ -1,21 +1,24 @@
-# v0.8.1b
+# v0.8.2
 
-- Node.js runtime gewijzigd van 20.x naar 24.x.
-- Compatibel gemaakt met `@supabase/supabase-js` 2.110.2, dat Node.js 22 of hoger vereist.
-- Vercel-configuratie en installatie-instructies bijgewerkt.
+- Klanten, installaties, afspraken en bedrijfsinstellingen naar Supabase verplaatst.
+- Nieuwe RLS-beveiligde tabellen per `organization_id` toegevoegd.
+- Atomische cloudopslag via `replace_organization_state` toegevoegd.
+- Datarevisie toegevoegd om overschrijven door een verouderd tweede apparaat te voorkomen.
+- Automatische, gecontroleerde migratie van lokale v0.7/v0.8.1-data toegevoegd.
+- Lokale browsercache en offline wachtrij behouden.
+- Cloudstatus in de appheader en instellingen toegevoegd.
+- Uitloggen wacht waar mogelijk op de laatste cloudsynchronisatie.
+- Volledig schema en additieve v0.8.2-migratie toegevoegd.
+- Versie bijgewerkt naar 0.8.2.
 
-# Wijzigingen v0.8.1
+# v0.8.1c
+
+- Package-lock uitsluitend via de openbare npm-registry.
+- Vercel-installatie op `npm ci` gezet.
+
+# v0.8.1
 
 - Supabase Auth toegevoegd.
-- Registreren met bedrijfsnaam, contactpersoon, e-mail en wachtwoord.
-- Verplichte e-mailbevestigingsflow.
-- Inloggen, sessieherstel, uitloggen en wachtwoordherstel.
-- Automatische profiel- en organisatieaanmaak na eerste bevestigde login.
-- Row Level Security voor accounts en organisaties.
-- Organisatie-ID als scheiding voor tijdelijke lokale onderhoudsdata.
-- Eenmalige claim van bestaande v0.7/v0.8.0-browserdata.
-- Accountpagina en accountknop in de appheader.
-- Bedrijfsnaam/contactpersoon synchroniseren naar Supabase.
-- Publieke Supabase-configuratie via `.env.local`.
-- Supabase SQL-schema en installatiehandleiding toegevoegd.
-- Toekomstige abonnementsvelden voorbereid en afgeschermd tegen clientwijzigingen.
+- Registreren, e-mailbevestiging, inloggen en wachtwoordherstel.
+- Automatische organisatie per bedrijfsaccount.
+- RLS voor accounts en organisaties.

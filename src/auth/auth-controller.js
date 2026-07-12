@@ -24,6 +24,7 @@ let activeUserId = '';
 let enteringAccount = false;
 let lastRegistrationEmail = '';
 let recoveryMode = new URL(window.location.href).searchParams.get('auth') === 'recovery';
+let authenticatedHandler = null;
 
 function esc(value = '') {
   return String(value)
@@ -295,7 +296,7 @@ function showAccountSetupError(error) {
       <h2>Bedrijfsomgeving kan nog niet worden geopend</h2>
       <p>${esc(error?.message || 'Er is een fout opgetreden bij het aanmaken van de bedrijfsomgeving.')}</p>
     </div>
-    <div class="auth-message error">Controleer of <code>supabase/schema.sql</code> volledig is uitgevoerd en vernieuw daarna de pagina.</div>
+    <div class="auth-message error">Controleer of <code>supabase/schema.sql</code> én <code>supabase/cloud_schema_v082.sql</code> volledig zijn uitgevoerd en vernieuw daarna de pagina.</div>
     <button class="primary" id="retryWorkspaceBtn" type="button">Opnieuw proberen</button>
     <button class="auth-link" id="workspaceLogoutBtn" type="button">Uitloggen</button>
   `, { compact: true });
@@ -312,10 +313,13 @@ async function enterAccount(session, successMessage = '') {
     setAccountContext(context);
     exposeAccountApi();
     maybeClaimLegacyData(context.organization.name);
+    if (typeof authenticatedHandler === 'function') {
+      showLoading('Cloudgegevens laden…');
+      await authenticatedHandler(context);
+    }
     activeUserId = session.user.id;
     clearAuthParameters();
     setAppVisible(true);
-    window.dispatchEvent(new CustomEvent('maintenance-account-ready', { detail: context }));
     if (successMessage) window.setTimeout(() => alert(successMessage), 300);
   } catch (error) {
     console.error('Bedrijfsomgeving laden mislukt', error);
@@ -354,6 +358,11 @@ function exposeAccountApi() {
 
 async function signOut() {
   const supabase = getSupabaseClient();
+  try {
+    await window.maintenanceCloud?.flush?.();
+  } catch (error) {
+    console.warn('Laatste cloudsynchronisatie voor uitloggen mislukt', error);
+  }
   activeUserId = '';
   setAccountContext(null);
   await supabase?.auth.signOut();
@@ -422,11 +431,7 @@ export async function bootstrapAuth({ onAuthenticated } = {}) {
     showLoading('Account controleren…');
   }
 
-  window.addEventListener('maintenance-account-ready', async event => {
-    if (typeof onAuthenticated === 'function') {
-      await onAuthenticated(event.detail);
-    }
-  }, { once: true });
+  authenticatedHandler = typeof onAuthenticated === 'function' ? onAuthenticated : null;
 
   supabase.auth.onAuthStateChange((event, session) => {
     if (event === 'PASSWORD_RECOVERY') {

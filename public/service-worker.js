@@ -1,4 +1,4 @@
-const CACHE_NAME = 'onderhoudplanner-v081-shell-1';
+const CACHE_NAME = 'onderhoudplanner-v082-shell-1';
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {

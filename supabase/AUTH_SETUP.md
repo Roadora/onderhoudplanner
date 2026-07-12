@@ -1,41 +1,45 @@
-# Supabase Auth instellen
+# Supabase-instelling voor OnderhoudPlanner v0.8.2
 
-## 1. Database
+## Bestaand live project
 
-Open in Supabase **SQL Editor**, plak de volledige inhoud van `schema.sql` en voer die uit.
+Voer in **SQL Editor** alleen uit:
 
-## 2. E-mailaccounts
+```text
+cloud_schema_v082.sql
+```
 
-Ga naar **Authentication → Sign In / Providers → Email**:
+## Volledig nieuw project
 
-- Email provider: aan
-- Allow new users to sign up: aan
-- Confirm email: aan
-- Minimum password length: minimaal 10 tekens aanbevolen
+Voer één keer uit:
 
-## 3. Redirect-URL's
+```text
+schema.sql
+```
 
-Ga naar **Authentication → URL Configuration**.
+Dat bestand bevat zowel accounts als cloudgegevens.
 
-Lokaal:
+## Auth-controle
 
-- Site URL: `http://localhost:5173`
-- Redirect URL toevoegen: `http://localhost:5173/**`
+Bij **Authentication → Sign In / Providers**:
 
-Op Vercel voeg je later ook toe:
+- nieuwe gebruikers toestaan: aan;
+- Email provider: aan;
+- Confirm email: aan;
+- anonymous sign-ins: uit.
 
-- `https://jouw-domein.nl/**`
-- eventueel de Vercel-preview-URL met wildcard
+Bij **Authentication → URL Configuration**:
 
-## 4. Publieke API-waarden
+```text
+Site URL: https://onderhoudplanner.vercel.app
+Redirect URL: https://onderhoudplanner.vercel.app/**
+Redirect URL lokaal: http://localhost:5173/**
+```
 
-Ga naar **Project Settings → API** en kopieer:
+## Vercel-variabelen
 
-- Project URL
-- Publishable key
+```text
+VITE_SUPABASE_URL
+VITE_SUPABASE_PUBLISHABLE_KEY
+```
 
-Plaats deze in `.env.local`. Gebruik nooit een secret key of service-role key in een bestand dat met `VITE_` begint.
-
-## 5. E-mailverzending
-
-De standaard Supabase-mailserver is geschikt voor ontwikkeling en beperkt testen. Voor publieke registratie hoort vóór lancering een eigen SMTP-provider ingesteld te worden bij **Authentication → SMTP Settings**.
+Gebruik nooit een secret key of service-role key in de frontend.

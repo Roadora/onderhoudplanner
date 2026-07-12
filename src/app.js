@@ -80,12 +80,17 @@ const accountContext = getAccountContext();
 if(accountContext){
   const accountCompany = accountContext.organization?.name || '';
   const accountName = accountContext.profile?.full_name || '';
+  let accountStateChanged=false;
   if(accountCompany && (!state.settings.companyName || state.settings.companyName === DEFAULT_SETTINGS.companyName)){
     state.settings.companyName = accountCompany;
     state.company = accountCompany;
+    accountStateChanged=true;
   }
-  if(accountName && !state.settings.contactName) state.settings.contactName = accountName;
-  save();
+  if(accountName && !state.settings.contactName){
+    state.settings.contactName = accountName;
+    accountStateChanged=true;
+  }
+  if(accountStateChanged) save();
 }
 let route = {name:'dashboard'};
 let calendarMonth = new Date();
@@ -130,7 +135,7 @@ function load(){
       }
     }
     const data = normalizeState(raw ? JSON.parse(raw) : structuredClone(demoState));
-    localRepository.setItem(KEY, JSON.stringify(data));
+    localRepository.setItem(KEY, JSON.stringify(data), {silent:true});
     return data;
   }catch(e){
     console.error('Data laden mislukt',e);
@@ -1147,10 +1152,11 @@ function deleteSystem(id){
 function settings(){
   const lastUpdate=state.updatedAt ? new Date(state.updatedAt).toLocaleString('nl-NL') : 'Nog niet opgeslagen';
   const account=getAccountContext();
+  const recoveryBackups=window.maintenanceCloud?.getRecoveryBackups?.() || [];
   app.innerHTML = `<section class="screen">
     <article class="card pilot-banner">
       <p class="title">${APP_VERSION}</p>
-      <p class="muted">Je account en bedrijfsomgeving zijn beveiligd via Supabase. Klanten, installaties en afspraken worden in v0.8.1 nog tijdelijk lokaal en per bedrijfsaccount bewaard; cloudopslag volgt in v0.8.2.</p>
+      <p class="muted">Klanten, installaties, afspraken en bedrijfsinstellingen worden beveiligd in Supabase opgeslagen en zijn op al je apparaten beschikbaar. De browser bewaart daarnaast een lokale cache voor korte offline momenten.</p>
     </article>
 
     <article class="card account-summary-card">
@@ -1191,13 +1197,15 @@ function settings(){
     </article>
 
     <article class="card">
-      <h2>Back-up en overdracht</h2>
+      <h2>Cloud, back-up en overdracht</h2>
       <p class="muted">${state.customers.length} klanten · ${state.systems.length} systemen · ${appointments().length} afspraken</p>
-      <p class="helper">Laatst opgeslagen: ${lastUpdate}</p>
+      <p class="helper">Laatste lokale wijziging: ${lastUpdate}</p>
+      <p class="helper cloud-settings-status">Cloudstatus: ${esc(window.maintenanceCloud?.getStatus?.().label || 'Cloud actief')}</p>
       <div class="settings-actions">
         <button class="secondary" onclick="exportBackup()">⬇ Volledige back-up</button>
         <button class="secondary" onclick="document.getElementById('backupImport').click()">⬆ Back-up terugzetten</button>
         <button class="secondary" onclick="exportOverviewExcel()">📊 Overzicht exporteren</button>
+        ${recoveryBackups.length ? `<button class="secondary" onclick="window.maintenanceCloud.downloadLatestRecoveryBackup()">🛟 Noodback-up downloaden (${recoveryBackups.length})</button>` : ''}
       </div>
       <input id="backupImport" class="hidden-input" type="file" accept="application/json,.json" onchange="importBackupFile(this.files[0]);this.value=''">
     </article>
@@ -1213,7 +1221,7 @@ function settings(){
 
     <article class="card danger-zone">
       <h2>Gevarenzone</h2>
-      <button class="danger full-width" onclick="resetDemo()">Alle lokale gegevens wissen</button>
+      <button class="danger full-width" onclick="resetDemo()">Alle klanten en planning wissen</button>
     </article>
   </section>`;
 
@@ -1234,10 +1242,11 @@ function settings(){
         const initials=state.settings.companyName.split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase();
         accountBtn.textContent=initials||'OP';
       }
-      alert('Instellingen en bedrijfsaccount opgeslagen.');
+      await window.maintenanceCloud?.flush?.();
+      alert('Instellingen en bedrijfsaccount zijn in de cloud opgeslagen.');
     }catch(error){
       console.error('Bedrijfsaccount bijwerken mislukt',error);
-      alert('De lokale instellingen zijn opgeslagen, maar het bedrijfsaccount kon niet worden bijgewerkt.');
+      alert('De instellingen zijn lokaal bewaard, maar konden nog niet volledig met het bedrijfsaccount worden gesynchroniseerd.');
     }
     render();
   };
@@ -1523,11 +1532,27 @@ async function installApp(){
   if(!deferredInstallPrompt){alert('Open de app via Chrome of Edge en gebruik zo nodig “App installeren” in het browsermenu.');return;}
   deferredInstallPrompt.prompt(); await deferredInstallPrompt.userChoice; deferredInstallPrompt=null; render();
 }
-function resetDemo(){
-  if(!confirm('Alle klanten, systemen, afspraken en instellingen op dit apparaat verwijderen?')) return;
+async function resetDemo(){
+  if(!confirm('Alle klanten, installaties en afspraken uit deze bedrijfsomgeving verwijderen? De bedrijfsnaam en het account blijven bestaan.')) return;
+  const account=getAccountContext();
   localRepository.removeItem(KEY);
-  state = normalizeState(structuredClone(demoState));
+  state = normalizeState({
+    ...structuredClone(demoState),
+    company: account?.organization?.name || state.settings.companyName || 'Onderhoudsbedrijf',
+    settings:{
+      ...DEFAULT_SETTINGS,
+      companyName: account?.organization?.name || state.settings.companyName || 'Onderhoudsbedrijf',
+      contactName: account?.profile?.full_name || state.settings.contactName || ''
+    }
+  });
   save();
+  try{
+    await window.maintenanceCloud?.flush?.();
+    alert('Alle klanten, installaties en afspraken zijn uit de cloud verwijderd.');
+  }catch(error){
+    console.error('Cloudgegevens wissen nog niet gesynchroniseerd',error);
+    alert('De gegevens zijn op dit apparaat gewist, maar de cloud kon nog niet worden bijgewerkt. Laat de app open en controleer de cloudstatus.');
+  }
   nav('dashboard');
 }
 

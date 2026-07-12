@@ -1,28 +1,35 @@
 import { getOrganizationId } from '../account-context.js';
 
+let writeObserver = null;
+
 function scopedKey(key) {
   const organizationId = getOrganizationId();
   return organizationId ? `${key}::organization::${organizationId}` : key;
 }
 
 /**
- * Tijdelijke lokale repository voor v0.8.1.
+ * Lokale cache per bedrijfsaccount.
  *
- * De gegevens worden nog niet naar Supabase gestuurd, maar zijn vanaf deze
- * versie wel per bedrijfsaccount gescheiden. v0.8.2 vervangt deze repository
- * door online tabellen zonder dat de schermen opnieuw ontworpen hoeven worden.
+ * Vanaf v0.8.2 is Supabase de hoofdopslag. localStorage blijft bewust bestaan
+ * als snelle cache en als tijdelijke buffer wanneer een apparaat even offline is.
  */
 export const localRepository = Object.freeze({
   getItem(key) {
     return window.localStorage.getItem(scopedKey(key));
   },
 
-  setItem(key, value) {
+  setItem(key, value, { silent = false } = {}) {
     window.localStorage.setItem(scopedKey(key), value);
+    if (!silent && typeof writeObserver === 'function') {
+      writeObserver({ key, value, scopedKey: scopedKey(key) });
+    }
   },
 
-  removeItem(key) {
+  removeItem(key, { silent = false } = {}) {
     window.localStorage.removeItem(scopedKey(key));
+    if (!silent && typeof writeObserver === 'function') {
+      writeObserver({ key, value: null, scopedKey: scopedKey(key) });
+    }
   },
 
   getUnscopedItem(key) {
@@ -44,6 +51,13 @@ export const localRepository = Object.freeze({
   scopedKey
 });
 
+export function observeLocalWrites(observer) {
+  writeObserver = typeof observer === 'function' ? observer : null;
+  return () => {
+    if (writeObserver === observer) writeObserver = null;
+  };
+}
+
 export function claimLegacyLocalData(primaryKey, legacyKeys = []) {
   if (localRepository.hasScopedItem(primaryKey)) {
     return { status: 'already_scoped' };
@@ -64,7 +78,7 @@ export function claimLegacyLocalData(primaryKey, legacyKeys = []) {
   if (!sourceKey) return { status: 'nothing_to_claim' };
 
   const raw = localRepository.getUnscopedItem(sourceKey);
-  localRepository.setItem(primaryKey, raw);
+  localRepository.setItem(primaryKey, raw, { silent: true });
   localRepository.setUnscopedItem(claimKey, organizationId);
   return { status: 'claimed', sourceKey };
 }

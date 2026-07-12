@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.8.1 Accounts';
+export const APP_VERSION = '0.8.2 Cloudgegevens';
 
 // Bewust gelijk aan v0.7, zodat bestaande lokale data eenmalig aan het eerste
 // bedrijfsaccount op dit apparaat gekoppeld kan worden.

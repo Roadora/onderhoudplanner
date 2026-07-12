@@ -1,178 +1,129 @@
-# OnderhoudPlanner v0.8.1c — Vercel public npm fix
+# OnderhoudPlanner v0.8.2 — Cloudgegevens
 
-Deze versie herstelt de dependency-installatie op Vercel. Het package-lockbestand verwijst uitsluitend naar de openbare npm-registry en Vercel gebruikt `npm ci`.
+Deze versie bewaart de bedrijfsgegevens echt online in Supabase. De bestaande mobiele OnderhoudPlanner-interface blijft behouden.
 
-# OnderhoudPlanner v0.8.1a — Accounts + Vercel Node 20-fix
+## Wat is toegevoegd
 
-Deze versie voegt echte bedrijfsaccounts toe met Supabase Auth. Zonder geldig en bevestigd account blijft het onderhoudsdashboard afgesloten.
+- klanten online per bedrijfsomgeving;
+- installaties online per bedrijfsomgeving;
+- afspraken online per bedrijfsomgeving;
+- bedrijfsinstellingen online;
+- automatische migratie van bestaande v0.7/v0.8.1-browsergegevens;
+- lokale cache voor korte offline momenten;
+- zichtbare cloudstatus in de bovenbalk;
+- atomische opslag met revisiecontrole;
+- bescherming tegen het stil overschrijven van nieuwere wijzigingen vanaf een ander apparaat;
+- Row Level Security op alle nieuwe tabellen;
+- volledige JSON- en CSV-back-up blijft beschikbaar;
+- lokale migratie- of conflictback-ups zijn via Instellingen als noodback-up te downloaden.
 
+## Belangrijk voor jouw bestaande Supabase-project
 
-## Belangrijke Vercel-fix in v0.8.1a
-
-Deze versie zet Vercel expliciet op **Node.js 24.x** via `package.json`. Nieuwe Vercel-projecten gebruiken anders standaard Node.js 24.x. In npm zijn actuele meldingen bekend waarbij `npm install` op Node.js 22/24 kan stoppen met `Exit handler never called!`. Node.js 24 werkt in die meldingen wel.
-
-Na upload naar GitHub: controleer in Vercel onder **Settings → Build and Deployment → Node.js Version** dat `24.x` staat en start daarna een nieuwe deployment zonder oude buildcache.
-
-## Wat werkt in v0.8.1
-
-- bedrijfsaccount registreren;
-- verplichte e-mailbevestiging;
-- inloggen en sessie onthouden;
-- wachtwoord vergeten en nieuw wachtwoord instellen;
-- automatisch één eigen organisatie per account;
-- accountpagina en veilig uitloggen;
-- bedrijfsnaam en contactpersoon synchroniseren met Supabase;
-- Row Level Security op profielen, organisaties en organisatieleden;
-- bestaande v0.7/v0.8.0-data eenmalig aan het eerste account koppelen;
-- lokale onderhoudsdata gescheiden per bedrijfsaccount.
-
-## Belangrijke tussenstap
-
-De accounts en bedrijfsomgeving staan online in Supabase. Klanten, installaties, afspraken en onderhoudsinstellingen staan in **v0.8.1 nog lokaal in de browser**, maar met een aparte opslag per organisatie. In v0.8.2 worden deze gegevens naar beveiligde Supabase-tabellen verplaatst.
-
-Gebruik tot die stap de JSON-back-upfunctie voordat je van apparaat, browser of domein wisselt.
-
-## 1. Supabase-project maken
-
-1. Maak een nieuw Supabase-project.
-2. Open **SQL Editor**.
-3. Plak de volledige inhoud van `supabase/schema.sql`.
-4. Klik op **Run**.
-
-Het script maakt aan:
-
-- `profiles`;
-- `organizations`;
-- `organization_members`;
-- RLS-policies en beveiligde hulpfuncties.
-
-Een ingelogde gebruiker kan alleen zijn eigen profiel en bedrijfsomgeving lezen. De toekomstige betaalstatus kan niet door de gebruiker zelf op `active` worden gezet.
-
-## 2. E-mailbevestiging instellen
-
-Ga in Supabase naar **Authentication → Sign In / Providers → Email** en zet aan:
-
-- Email provider;
-- Allow new users to sign up;
-- Confirm email.
-
-Stel bij voorkeur een minimale wachtwoordlengte van 10 tekens in.
-
-## 3. Redirect-URL's instellen
-
-Ga naar **Authentication → URL Configuration**.
-
-Voor lokaal testen:
+Je hebt `supabase/schema.sql` voor v0.8.1 al uitgevoerd. Voer daarom nu alleen dit aanvullende bestand uit:
 
 ```text
-Site URL: http://localhost:5173
-Redirect URL: http://localhost:5173/**
+supabase/cloud_schema_v082.sql
 ```
 
-Voor productie wordt de Site URL je definitieve app-URL, bijvoorbeeld:
+Open in Supabase:
 
 ```text
-https://app.jouwdomein.nl
+SQL Editor → New query
 ```
 
-Voeg de exacte productie-URL toe aan Redirect URLs. Voor tijdelijke Vercel previews kan aanvullend een passende wildcard worden toegevoegd.
+Plak het volledige bestand en klik op **Run**. De waarschuwing over mogelijk destructieve handelingen is normaal: het script vervangt alleen policies en functies met bekende namen. Het verwijdert geen bestaande accounttabellen of gebruikers.
 
-## 4. SMTP instellen
+Een groene melding `Success. No rows returned` betekent dat de cloudtabellen klaarstaan. Optioneel kun je daarna `supabase/VERIFY_V082.sql` uitvoeren; alle zes controles horen `true` te zijn en RLS hoort voor de vier tabellen aan te staan.
 
-De standaard Supabase-mailserver verstuurt in de huidige configuratie alleen naar e-mailadressen van projectteamleden en heeft een zeer lage limiet. Voor registratie door echte bedrijven moet daarom een eigen SMTP-provider worden ingesteld via **Authentication → SMTP Settings**.
+## Nieuwe tabellen
 
-Geschikte voorbeelden zijn Resend, Postmark, Brevo of Amazon SES. De SMTP-wachtwoorden komen alleen in Supabase en nooit in deze frontend.
+- `company_settings`
+- `customers`
+- `installations`
+- `appointments`
 
-## 5. Omgevingsvariabelen
+Iedere rij bevat een `organization_id`. RLS controleert of de ingelogde gebruiker lid is van die bedrijfsomgeving.
 
-Kopieer `.env.example` naar `.env.local`:
+## Migratie van bestaande gegevens
+
+Bij de eerste login na deze update gebeurt het volgende:
+
+1. de app haalt de cloudgegevens van het bedrijf op;
+2. wanneer de cloud nog leeg is en in deze browser bestaande data staat, toont de app het exacte aantal klanten, installaties en afspraken;
+3. na bevestiging wordt alles in één transactie naar Supabase geschreven;
+4. vóór de overdracht wordt lokaal een extra herstelkopie bewaard;
+5. daarna is Supabase de hoofdopslag en wordt de browser alleen nog als cache gebruikt.
+
+Een oude lokale dataset kan nog steeds maar aan één bedrijfsaccount worden gekoppeld.
+
+## Synchronisatie
+
+De bovenbalk toont:
+
+- `Opgeslagen` — cloud en apparaat zijn gelijk;
+- `Opslaan…` — wijzigingen worden verzonden;
+- `Wachten…` — wijziging staat in de wachtrij;
+- `Offline` — wijziging blijft lokaal en wordt later verzonden;
+- `Niet gesynchroniseerd` — de cloudverbinding is mislukt.
+
+Wanneer dezelfde bedrijfsomgeving op twee apparaten tegelijk wordt gewijzigd, voorkomt een datarevisie dat een oudere kopie stilletjes de nieuwste versie overschrijft. Bij een conflict wordt de lokale versie als browserback-up bewaard en de nieuwste cloudversie opnieuw geladen.
+
+## Installeren en lokaal starten
+
+Gebruik Node.js 24.x.
 
 ```bash
-cp .env.example .env.local
-```
-
-Op Windows kan dit ook handmatig in Verkenner of VS Code.
-
-Vul daarna in:
-
-```text
-VITE_SUPABASE_URL=https://jouw-project.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
-VITE_APP_URL=http://localhost:5173/
-```
-
-Gebruik in de frontend uitsluitend de **Publishable key**. Zet nooit een `sb_secret_...`-key of service-role key in een `VITE_`-variabele.
-
-## 6. Lokaal starten
-
-Vereist voor deze stabiele Vercel-versie: Node.js 24.x (minimaal 20.19).
-
-```bash
-npm install
+npm ci
 npm run dev
 ```
 
-Open daarna het adres dat Vite toont, normaal:
+Open normaal:
 
 ```text
 http://localhost:5173
 ```
 
-Na wijzigen van `.env.local` moet de ontwikkelserver opnieuw worden gestart.
+## Omgevingsvariabelen
 
-## 7. Accountflow testen
+De bestaande Vercel-variabelen blijven hetzelfde:
 
-1. Klik op **Bedrijfsaccount aanmaken**.
-2. Vul bedrijfsnaam, naam, e-mailadres en wachtwoord in.
-3. Open de bevestigingsmail.
-4. Klik op de bevestigingslink.
-5. OnderhoudPlanner maakt automatisch de organisatie en eigenaar-koppeling aan.
-6. Controleer rechtsboven via de initialen de accountpagina.
-7. Test uitloggen, opnieuw inloggen en wachtwoord vergeten.
+```text
+VITE_SUPABASE_URL
+VITE_SUPABASE_PUBLISHABLE_KEY
+```
 
-Gebruik voor een scheidingstest twee verschillende e-mailaccounts. Beide accounts horen een eigen lege bedrijfsomgeving te krijgen.
+Gebruik uitsluitend de Supabase Publishable key. Zet nooit een secret- of service-role key in een `VITE_`-variabele.
 
-## 8. Bestaande lokale gegevens
+## Publiceren via GitHub en Vercel
 
-Wanneer deze versie in dezelfde browser en op dezelfde oorsprong wordt geopend als v0.7/v0.8.0, vraagt de app eenmalig:
+1. Vervang de repositorybestanden door de inhoud van deze map.
+2. Houd `package.json`, `package-lock.json`, `.npmrc` en `vercel.json` in de hoofdmap.
+3. Commit en push naar `main`.
+4. Controleer in Vercel:
+   - Framework: `Vite`
+   - Node.js: `24.x`
+   - Build command: `npm run build`
+   - Output directory: `dist`
+5. Deploy zonder oude buildcache.
 
-> Wil je de bestaande OnderhoudPlanner-gegevens koppelen aan dit bedrijfsaccount?
-
-Na bevestiging worden de lokale gegevens onder het organisatie-ID opgeslagen. De oude ongescheiden kopie wordt uit veiligheid niet automatisch verwijderd. Eén oude dataset kan maar aan één bedrijfsaccount worden geclaimd.
-
-## 9. Publiceren op Vercel
-
-- zet de projectmap in GitHub;
-- importeer de repository in Vercel;
-- Framework preset: **Vite**;
-- Build command: `npm run build`;
-- Output directory: `dist`;
-- voeg de drie publieke `VITE_`-variabelen toe bij Vercel Environment Variables;
-- voeg daarna de definitieve Vercel-/domein-URL toe aan Supabase URL Configuration.
+Voer bij voorkeur eerst `cloud_schema_v082.sql` uit. Anders toont de app na inloggen terecht dat de cloudtabellen nog ontbreken.
 
 ## Structuur
 
 ```text
-src/auth/auth-controller.js   registratie, login en wachtwoordherstel
-src/auth/account-service.js   profiel en organisatie aanmaken/beheren
-src/lib/supabase.js           publieke Supabase-client
-src/account-context.js        actieve gebruiker en organisatie
-src/data/local-repository.js  tijdelijke opslag per organisatie
-supabase/schema.sql           tabellen, privileges en RLS
-supabase/AUTH_SETUP.md        korte Supabase-checklist
+src/data/cloud-repository.js   cloud laden, migreren en synchroniseren
+src/data/local-repository.js   lokale cache per organisatie
+src/auth/                      accounts en bedrijfsomgeving
+supabase/cloud_schema_v082.sql aanvullende migratie voor jouw live project
+supabase/schema.sql            volledig schema voor een nieuw project
 ```
 
-## Nog niet in deze versie
+## Nog niet in v0.8.2
 
-- klanten en installaties online opslaan;
+- Stripe Checkout;
+- verplichte betaalmethode vóór de proefperiode;
+- 14-daagse proefperiode en abonnementsblokkade;
 - meerdere medewerkers per bedrijf;
-- Stripe Checkout en verplichte betaalmethode;
-- 14-daagse proefperiode;
-- automatische e-mail- of WhatsApp-herinneringen.
+- servergestuurde e-mail- of WhatsApp-herinneringen.
 
-De eerstvolgende stap is **v0.8.2 Cloudgegevens**. Daarna volgt Stripe, waarbij het abonnement pas start nadat de betaalmethode tijdens de 14-daagse proefaanmelding is vastgelegd.
-
-
-## Vercel Node-versie
-
-Deze versie gebruikt Node.js `24.x`. Stel in Vercel bij **Settings → Build and Deployment → Node.js Version** eveneens `24.x` in. Start daarna een nieuwe deployment zonder oude buildcache.
+De volgende versie wordt **v0.9 Betalingen** met Stripe Checkout, een verplichte betaalmethode en automatische toegang op basis van de abonnementsstatus.

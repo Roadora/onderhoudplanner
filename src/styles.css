@@ -231,3 +231,126 @@ body.auth-active{background:#edf3fb}
 @keyframes cloud-spin{to{transform:rotate(360deg)}}
 @media (max-width:390px){.sync-status-label{display:none}.sync-status{min-width:39px;padding:0}}
 .cloud-settings-status{font-weight:800;color:var(--blue)}
+
+/* v0.8.2a — Instellingen polish */
+.screen{
+  padding-bottom:calc(112px + env(safe-area-inset-bottom));
+}
+.settings-screen .account-summary-card{
+  margin-bottom:12px;
+}
+.settings-subsection{
+  display:grid;
+  gap:10px;
+  padding-top:4px;
+}
+.settings-subsection-heading{
+  padding:4px 1px 0;
+}
+.settings-subsection-heading h3{
+  margin:0;
+  font-size:15px;
+  color:#1d2939;
+}
+.settings-subsection-heading p{
+  margin:4px 0 0;
+  font-size:12px;
+  line-height:1.45;
+  color:var(--muted);
+}
+.settings-option-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:10px;
+}
+.setting-tile{
+  min-width:0;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:#f8fafc;
+}
+.setting-tile-wide{
+  width:100%;
+}
+.setting-label-row{
+  min-height:34px;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:8px;
+  margin-bottom:8px;
+}
+.setting-label-row label{
+  margin:0;
+  color:#1d2939;
+  font-size:13px;
+  line-height:1.25;
+  font-weight:800;
+}
+.setting-label-row span{
+  flex:0 0 auto;
+  color:#667085;
+  font-size:10px;
+  line-height:1.2;
+  font-weight:700;
+  text-align:right;
+}
+.setting-tile input,
+.setting-tile select{
+  min-height:48px;
+  border-color:#d8e0eb;
+  background:#fff;
+  box-shadow:0 1px 2px rgba(16,24,40,.03);
+}
+.setting-tile input:focus,
+.setting-tile select:focus{
+  border-color:#75a7ec;
+  box-shadow:0 0 0 4px rgba(7,87,200,.09);
+}
+.input-affix{
+  position:relative;
+}
+.input-affix>span{
+  position:absolute;
+  left:13px;
+  top:50%;
+  transform:translateY(-50%);
+  color:#475467;
+  font-weight:800;
+  pointer-events:none;
+}
+.input-affix input{
+  padding-left:31px;
+}
+.cloud-account-card{
+  display:flex;
+  align-items:flex-start;
+  gap:12px;
+  border-left:5px solid var(--green);
+}
+.cloud-account-icon{
+  width:34px;
+  height:34px;
+  flex:0 0 34px;
+  border-radius:12px;
+  display:grid;
+  place-items:center;
+  background:#e8f7ee;
+  color:#15803d;
+  font-size:18px;
+  font-weight:900;
+}
+.cloud-account-card .muted{
+  margin-top:5px;
+  line-height:1.5;
+}
+
+@media (max-width:350px){
+  .settings-option-grid{
+    grid-template-columns:1fr;
+  }
+  .setting-label-row{
+    min-height:0;
+  }
+}

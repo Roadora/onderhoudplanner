@@ -1,3 +1,11 @@
+# 0.8.2a — Instellingen polish
+
+- Groot versieblok boven Instellingen verwijderd.
+- Onderhoudsprijs, actielijst en onderhoudsinterval mobiel netter gegroepeerd.
+- Onderhoudsprijs heeft een vaste euro-prefix.
+- Accounttekst over lokale opslag gecorrigeerd naar actieve cloudopslag.
+- Extra onderruimte toegevoegd zodat de onderste navigatie geen instellingen bedekt.
+
 # v0.8.2
 
 - Klanten, installaties, afspraken en bedrijfsinstellingen naar Supabase verplaatst.

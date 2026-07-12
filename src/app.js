@@ -1153,12 +1153,7 @@ function settings(){
   const lastUpdate=state.updatedAt ? new Date(state.updatedAt).toLocaleString('nl-NL') : 'Nog niet opgeslagen';
   const account=getAccountContext();
   const recoveryBackups=window.maintenanceCloud?.getRecoveryBackups?.() || [];
-  app.innerHTML = `<section class="screen">
-    <article class="card pilot-banner">
-      <p class="title">${APP_VERSION}</p>
-      <p class="muted">Klanten, installaties, afspraken en bedrijfsinstellingen worden beveiligd in Supabase opgeslagen en zijn op al je apparaten beschikbaar. De browser bewaart daarnaast een lokale cache voor korte offline momenten.</p>
-    </article>
-
+  app.innerHTML = `<section class="screen settings-screen">
     <article class="card account-summary-card">
       <div class="row between">
         <div>
@@ -1174,13 +1169,40 @@ function settings(){
         <h2>Bedrijfsprofiel</h2>
         <div class="field"><label>Bedrijfsnaam</label><input name="companyName" value="${esc(state.settings.companyName)}" required></div>
         <div class="field"><label>Naam voor begroeting</label><input name="contactName" value="${esc(state.settings.contactName)}" placeholder="Bijv. Ike"></div>
-        <div class="two">
-          <div class="field"><label>Standaard onderhoudsprijs (€)</label><input name="maintenancePrice" type="number" min="0" step="1" value="${Number(state.settings.maintenancePrice)||0}"></div>
-          <div class="field"><label>Actielijst vanaf</label><select name="leadDays">
-            ${[30,45,60,90].map(v=>`<option value="${v}" ${Number(state.settings.leadDays)===v?'selected':''}>${v} dagen vooraf</option>`).join('')}
-          </select></div>
+        <div class="settings-subsection">
+          <div class="settings-subsection-heading">
+            <h3>Onderhoudsplanning</h3>
+            <p>Deze waarden worden automatisch gebruikt bij nieuwe installaties.</p>
+          </div>
+          <div class="settings-option-grid">
+            <div class="field setting-tile">
+              <div class="setting-label-row">
+                <label for="maintenancePrice">Onderhoudsprijs</label>
+                <span>Per beurt</span>
+              </div>
+              <div class="input-affix">
+                <span aria-hidden="true">€</span>
+                <input id="maintenancePrice" name="maintenancePrice" type="number" min="0" step="1" inputmode="decimal" value="${Number(state.settings.maintenancePrice)||0}">
+              </div>
+            </div>
+            <div class="field setting-tile">
+              <div class="setting-label-row">
+                <label for="leadDays">Actielijst</label>
+                <span>Vooraf tonen</span>
+              </div>
+              <select id="leadDays" name="leadDays">
+                ${[30,45,60,90].map(v=>`<option value="${v}" ${Number(state.settings.leadDays)===v?'selected':''}>${v} dagen vooraf</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="field setting-tile setting-tile-wide">
+            <div class="setting-label-row">
+              <label for="defaultInterval">Onderhoudsinterval</label>
+              <span>Na afronding</span>
+            </div>
+            <select id="defaultInterval" name="defaultInterval">${[6,12,18,24].map(v=>`<option value="${v}" ${Number(state.settings.defaultInterval)===v?'selected':''}>Elke ${v} maanden</option>`).join('')}</select>
+          </div>
         </div>
-        <div class="field"><label>Standaard onderhoudsinterval</label><select name="defaultInterval">${[6,12,18,24].map(v=>`<option value="${v}" ${Number(state.settings.defaultInterval)===v?'selected':''}>${v} maanden</option>`).join('')}</select></div>
         <div class="field"><label>WhatsApp-bericht</label><textarea name="whatsappTemplate" rows="5">${esc(state.settings.whatsappTemplate)}</textarea><p class="helper">Beschikbaar: {naam}, {bedrijf}, {datum} en {systeem}.</p></div>
         <button class="primary" type="submit">Instellingen opslaan</button>
       </article>
@@ -1275,9 +1297,12 @@ function accountPage(){
       </div>
     </article>
 
-    <article class="card notice-card">
-      <h2>Opslag in deze versie</h2>
-      <p class="muted">Je account en bedrijfsomgeving staan online. De onderhoudsgegevens zijn nu per account afgescheiden, maar staan tot v0.8.2 nog alleen op dit apparaat. Gebruik daarom de back-upfunctie bij Instellingen.</p>
+    <article class="card cloud-account-card">
+      <div class="cloud-account-icon" aria-hidden="true">✓</div>
+      <div>
+        <p class="title">Cloudopslag actief</p>
+        <p class="muted">Je account en onderhoudsgegevens worden veilig online opgeslagen en automatisch tussen je apparaten gesynchroniseerd.</p>
+      </div>
     </article>
 
     <article class="card">

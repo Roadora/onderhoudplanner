@@ -35,7 +35,7 @@ export async function inviteTeamMember(email, role) {
   const { data: sessionData } = await supabase.auth.getSession();
   const response = await fetch('/api/invite-team-member', {
     method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${sessionData.session?.access_token || ''}`},
-    body:JSON.stringify({email,role,organizationId:account.organization.id})
+    body:JSON.stringify({email,role})
   });
   const payload = await response.json().catch(()=>({}));
   if (!response.ok) throw new Error(payload.error || 'Uitnodigen mislukt.');

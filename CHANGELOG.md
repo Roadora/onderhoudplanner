@@ -30,3 +30,7 @@
 - Registreren, e-mailbevestiging, inloggen en wachtwoordherstel.
 - Automatische organisatie per bedrijfsaccount.
 - RLS voor accounts en organisaties.
+
+## v0.9.2
+- Eigenaarcontrole gebruikt nu de ingelogde gebruikerssessie en RLS.
+- 403 door ontbrekende service-role bypass opgelost.

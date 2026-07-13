@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.9.0 Instellingen polish';
+export const APP_VERSION = '0.9.1 Instellingen polish';
 
 // Bewust gelijk aan v0.7, zodat bestaande lokale data eenmalig aan het eerste
 // bedrijfsaccount op dit apparaat gekoppeld kan worden.

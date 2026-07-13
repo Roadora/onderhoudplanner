@@ -6,8 +6,10 @@ import { bootstrapCloudData } from './data/cloud-repository.js';
 registerServiceWorker();
 
 bootstrapAuth({
-  onAuthenticated: async () => {
-    await bootstrapCloudData();
+  onAuthenticated: async (context) => {
+    // Monteurs krijgen in v0.9.0 nog geen volledige bedrijfsdataset.
+    // Werkopdrachtfiltering wordt in de volgende stap toegevoegd.
+    if (context?.membership?.role !== 'technician') await bootstrapCloudData();
     await import('./app.js');
   }
 }).catch(error => {

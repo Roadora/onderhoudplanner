@@ -16,6 +16,7 @@ import {
   setAccountContext
 } from '../account-context.js';
 import { claimLegacyLocalData, localRepository } from '../data/local-repository.js';
+import { acceptInvitationFromUrl } from '../team/team-service.js';
 
 const authRoot = document.querySelector('#authRoot');
 const appShell = document.querySelector('#appShell');
@@ -309,6 +310,7 @@ async function enterAccount(session, successMessage = '') {
   enteringAccount = true;
   showLoading();
   try {
+    await acceptInvitationFromUrl();
     const context = await ensureAccountWorkspace(session.user);
     setAccountContext(context);
     exposeAccountApi();

@@ -1,6 +1,7 @@
 import { APP_VERSION, STORAGE_KEY as KEY, LEGACY_STORAGE_KEYS as LEGACY_KEYS } from './config.js';
 import { localRepository } from './data/local-repository.js';
 import { getAccountContext } from './account-context.js';
+import { listTeamMembers, listPendingInvitations, inviteTeamMember } from './team/team-service.js';
 
 const $ = (s) => document.querySelector(s);
 const field = (form, name) => form?.elements?.namedItem(name) || null;
@@ -92,7 +93,8 @@ if(accountContext){
   }
   if(accountStateChanged) save();
 }
-let route = {name:'dashboard'};
+const currentRole = getAccountContext()?.membership?.role || 'owner';
+let route = {name: currentRole === 'technician' ? 'myDay' : 'dashboard'};
 let calendarMonth = new Date();
 let selectedAgendaDate = todayKey();
 let deferredInstallPrompt = null;
@@ -269,18 +271,18 @@ function nav(name, params={}){
 }
 
 function updateFab(){
-  const show = ['dashboard','customers'].includes(route.name);
+  const show = currentRole !== 'technician' && ['dashboard','customers'].includes(route.name);
   fabAdd.style.display = show ? 'block' : 'none';
   fabAdd.onclick = () => nav('new',{back:route.name});
 }
 
 function render(){
   document.querySelectorAll('.bottom-nav button').forEach(b=>b.classList.toggle('active',b.dataset.route===route.name));
-  backBtn.hidden = ['dashboard','customers','agenda','settings'].includes(route.name);
+  backBtn.hidden = ['dashboard','customers','agenda','settings','myDay'].includes(route.name);
   backBtn.onclick = () => navBack();
 
   const titles = {
-    dashboard:'Dashboard', customers:'Klanten', agenda:'Agenda', settings:'Instellingen', account:'Bedrijfsaccount',
+    dashboard:'Dashboard', customers:'Klanten', agenda:'Agenda', settings:'Instellingen', account:'Bedrijfsaccount', team:'Medewerkers', myDay:'Mijn dag',
     new:'Nieuwe installatie', detail:'Klantdetail', editCustomer:'Klant bewerken',
     editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails', notifications:'Actielijst'
   };
@@ -290,6 +292,8 @@ function render(){
   if(route.name==='customers') customers();
   if(route.name==='agenda') agenda();
   if(route.name==='settings') settings();
+  if(route.name==='team') teamPage();
+  if(route.name==='myDay') myDayPage();
   if(route.name==='account') accountPage();
   if(route.name==='new') newInstall();
   if(route.name==='detail') detail(route.customerId);
@@ -306,7 +310,7 @@ function render(){
 
 function navBack(){
   if(route.name==='appointmentDetail') return nav('dayPlan',{date:route.date || todayKey(),back:'agenda'});
-  if(route.name==='notifications' || route.name==='account') return nav('dashboard');
+  if(route.name==='notifications' || route.name==='account' || route.name==='team') return nav(currentRole === 'technician' ? 'myDay' : 'dashboard');
   if(route.name==='detail') return nav(route.back || 'dashboard');
   if(route.name==='editCustomer') return nav('detail',{customerId:route.customerId,back:'customers'});
   if(route.name==='editSystem' || route.name==='planAppointment'){
@@ -316,6 +320,12 @@ function navBack(){
   return nav(route.back || 'dashboard');
 }
 
+if(currentRole === 'technician'){
+  document.querySelectorAll('.bottom-nav button').forEach(button=>{
+    button.hidden = true;
+  });
+  fabAdd.hidden = true;
+}
 document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>nav(b.dataset.route));
 if(accountBtn){
   const account=getAccountContext();
@@ -1218,6 +1228,13 @@ function settings(){
       <input id="sheetImport" class="hidden-input" type="file" accept=".xlsx,.xls,.csv,text/csv" onchange="importSpreadsheetFile(this.files[0]);this.value=''">
     </article>
 
+    ${['owner','planner'].includes(currentRole) ? `<article class="card">
+      <div class="row between">
+        <div><h2>Medewerkers</h2><p class="muted">Nodig planners en monteurs uit voor hun eigen mobiele account.</p></div>
+        <button class="smallbtn" type="button" onclick="nav('team')">Beheren</button>
+      </div>
+    </article>` : ''}
+
     <article class="card">
       <h2>Cloud, back-up en overdracht</h2>
       <p class="muted">${state.customers.length} klanten · ${state.systems.length} systemen · ${appointments().length} afspraken</p>
@@ -1272,6 +1289,49 @@ function settings(){
     }
     render();
   };
+}
+
+
+async function teamPage(){
+  if(!['owner','planner'].includes(currentRole)) return nav('myDay');
+  app.innerHTML = `<section class="screen"><article class="card"><h2>Medewerkers laden…</h2><p class="muted">Even geduld.</p></article></section>`;
+  try{
+    const [members, invitations] = await Promise.all([listTeamMembers(), listPendingInvitations()]);
+    app.innerHTML = `<section class="screen team-screen">
+      <article class="card">
+        <div class="row between"><div><h2>Team</h2><p class="muted">${members.length} van maximaal 5 gebruikers actief.</p></div><span class="status-badge active">Team</span></div>
+        <div class="team-list">${members.map(m=>`<div class="team-member-row"><div class="team-avatar">${esc((m.display_name||m.email||'?').slice(0,1).toUpperCase())}</div><div class="team-member-copy"><b>${esc(m.display_name||m.email)}</b><span>${esc(m.email||'')}</span></div><span class="status-badge ${m.status==='active'?'active':'neutral'}">${({owner:'Eigenaar',planner:'Planner',technician:'Monteur'})[m.role]||m.role}</span></div>`).join('')}</div>
+      </article>
+      <article class="card form">
+        <h2>Medewerker uitnodigen</h2>
+        <p class="muted">De medewerker ontvangt een e-mail en logt daarna in op dezelfde app.</p>
+        <form id="inviteMemberForm" class="form">
+          <div class="field"><label>E-mailadres</label><input name="email" type="email" required placeholder="monteur@bedrijf.nl"></div>
+          <div class="field"><label>Rol</label><select name="role"><option value="technician">Monteur</option><option value="planner">Planner</option></select></div>
+          <button class="primary" type="submit" ${members.length>=5?'disabled':''}>Uitnodiging versturen</button>
+        </form>
+      </article>
+      ${invitations.length?`<article class="card"><h2>Openstaande uitnodigingen</h2><div class="team-list">${invitations.map(i=>`<div class="team-member-row"><div class="team-avatar">✉</div><div class="team-member-copy"><b>${esc(i.email)}</b><span>Verloopt ${new Date(i.expires_at).toLocaleDateString('nl-NL')}</span></div><span class="status-badge paused">${i.role==='planner'?'Planner':'Monteur'}</span></div>`).join('')}</div></article>`:''}
+      <article class="card notice"><b>Volgende bouwstap</b><p>Werkopdrachten worden hierna aan één of meerdere medewerkers gekoppeld. Monteurs zien dan uitsluitend hun eigen dagplanning.</p></article>
+    </section>`;
+    const form=$('#inviteMemberForm');
+    form.onsubmit=async e=>{
+      e.preventDefault();
+      const btn=form.querySelector('button[type=submit]'); btn.disabled=true; btn.textContent='Versturen…';
+      try{ await inviteTeamMember(field(form,'email').value,field(form,'role').value); alert('Uitnodiging is verstuurd.'); teamPage(); }
+      catch(error){ alert(error.message||'Uitnodigen mislukt.'); btn.disabled=false; btn.textContent='Uitnodiging versturen'; }
+    };
+  }catch(error){ app.innerHTML=`<section class="screen"><article class="card"><h2>Medewerkers konden niet laden</h2><p>${esc(error.message||error)}</p><p class="helper">Voer eerst supabase/team_schema_v090.sql uit en voeg SUPABASE_SERVICE_ROLE_KEY toe in Vercel.</p></article></section>`; }
+}
+
+function myDayPage(){
+  const items=appointmentsOnDate(todayKey());
+  app.innerHTML=`<section class="screen my-day-screen">
+    <article class="hero"><div><p class="eyebrow">Mijn werkdag</p><h2>${fmt(todayKey())}</h2><p>${items.length} ${items.length===1?'opdracht':'opdrachten'} gepland</p></div></article>
+    <div class="sectionhead"><h2>Vandaag</h2></div>
+    ${items.length?items.map(appointmentCard).join(''):'<article class="card empty">Er staan vandaag nog geen opdrachten in je planning.</article>'}
+    <article class="card"><h2>Medewerkeromgeving</h2><p class="muted">In de volgende versie worden alleen opdrachten getoond die aan jouw account zijn toegewezen, met route-, bel-, start- en afrondknoppen.</p></article>
+  </section>`;
 }
 
 function accountPage(){

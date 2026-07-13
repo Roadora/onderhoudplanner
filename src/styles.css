@@ -354,3 +354,6 @@ body.auth-active{background:#edf3fb}
     min-height:0;
   }
 }
+
+/* v0.9.0 Rollen & medewerkers */
+.team-list{display:grid;gap:10px;margin-top:14px}.team-member-row{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line,#e4e8ef);border-radius:14px;background:#fff}.team-avatar{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:#eaf2ff;color:#0757c8;font-weight:800;flex:0 0 auto}.team-member-copy{display:flex;flex-direction:column;min-width:0;flex:1}.team-member-copy b,.team-member-copy span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.team-member-copy span{font-size:.82rem;color:#697386}.my-day-screen .hero{margin-bottom:18px}

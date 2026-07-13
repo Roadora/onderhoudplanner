@@ -16,7 +16,12 @@ import {
   setAccountContext
 } from '../account-context.js';
 import { claimLegacyLocalData, localRepository } from '../data/local-repository.js';
-import { acceptInvitationFromUrl } from '../team/team-service.js';
+import {
+  clearActivationUrl,
+  completeTeamInvitation,
+  getActivationToken,
+  hasEmployeeActivation
+} from '../team/team-service.js';
 
 const authRoot = document.querySelector('#authRoot');
 const appShell = document.querySelector('#appShell');
@@ -25,6 +30,7 @@ let activeUserId = '';
 let enteringAccount = false;
 let lastRegistrationEmail = '';
 let recoveryMode = new URL(window.location.href).searchParams.get('auth') === 'recovery';
+let invitationMode = false;
 let authenticatedHandler = null;
 
 function esc(value = '') {
@@ -249,6 +255,63 @@ function showForgotPassword(message = '', messageType = 'info', presetEmail = ''
   };
 }
 
+function showInvitationActivation(session, message = '', messageType = 'info') {
+  invitationMode = true;
+  const email = session?.user?.email || '';
+  const suggestedName = session?.user?.user_metadata?.contact_name || email.split('@')[0] || '';
+  shell(`
+    <div class="auth-heading">
+      <span class="auth-kicker">Medewerkersaccount</span>
+      <h2>Activeer je account</h2>
+      <p>Stel je naam en wachtwoord in. Daarna word je gekoppeld aan het bedrijf dat je heeft uitgenodigd.</p>
+    </div>
+    ${messageBox(message, messageType)}
+    <form class="auth-form" id="invitationActivationForm">
+      <label>E-mailadres<input value="${esc(email)}" type="email" disabled></label>
+      <label>Jouw naam<input name="contactName" autocomplete="name" maxlength="100" value="${esc(suggestedName)}" required></label>
+      <label>Nieuw wachtwoord<input name="password" type="password" autocomplete="new-password" minlength="10" required><small>Minimaal 10 tekens.</small></label>
+      <label>Herhaal wachtwoord<input name="passwordConfirm" type="password" autocomplete="new-password" minlength="10" required></label>
+      <button class="primary" type="submit">Account activeren</button>
+    </form>
+  `, { compact: true });
+
+  const form = document.querySelector('#invitationActivationForm');
+  form.onsubmit = async event => {
+    event.preventDefault();
+    const values = new FormData(form);
+    const contactName = String(values.get('contactName') || '').trim();
+    const password = String(values.get('password') || '');
+    const passwordConfirm = String(values.get('passwordConfirm') || '');
+    const activationToken = getActivationToken();
+
+    if (password !== passwordConfirm) {
+      showInvitationActivation(session, 'De twee wachtwoorden zijn niet gelijk.', 'error');
+      return;
+    }
+    if (!activationToken) {
+      showInvitationActivation(session, 'De activatielink is ongeldig of incompleet. Vraag de eigenaar om een nieuwe uitnodiging.', 'error');
+      return;
+    }
+
+    setFormBusy(form, true, 'Account activeren…');
+    const supabase = getSupabaseClient();
+    try {
+      const { error: passwordError } = await supabase.auth.updateUser({ password, data: { contact_name: contactName } });
+      if (passwordError) throw passwordError;
+      await completeTeamInvitation(activationToken, contactName);
+      clearActivationUrl();
+      invitationMode = false;
+      activeUserId = '';
+      const { data: { session: refreshedSession }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !refreshedSession) throw sessionError || new Error('De nieuwe sessie kon niet worden geladen.');
+      await enterAccount(refreshedSession, 'Je medewerkersaccount is geactiveerd.');
+    } catch (error) {
+      console.error('Medewerkersaccount activeren mislukt', error);
+      showInvitationActivation(session, authErrorMessage(error), 'error');
+    }
+  };
+}
+
 function showUpdatePassword(message = '', messageType = 'info') {
   recoveryMode = true;
   shell(`
@@ -310,7 +373,10 @@ async function enterAccount(session, successMessage = '') {
   enteringAccount = true;
   showLoading();
   try {
-    await acceptInvitationFromUrl();
+    if (hasEmployeeActivation()) {
+      showInvitationActivation(session);
+      return;
+    }
     const context = await ensureAccountWorkspace(session.user);
     setAccountContext(context);
     exposeAccountApi();
@@ -437,15 +503,21 @@ export async function bootstrapAuth({ onAuthenticated } = {}) {
 
   supabase.auth.onAuthStateChange((event, session) => {
     if (event === 'PASSWORD_RECOVERY') {
-      showUpdatePassword();
+      if (session && hasEmployeeActivation()) showInvitationActivation(session);
+      else showUpdatePassword();
       return;
     }
     if (event === 'SIGNED_OUT') {
+      invitationMode = false;
       if (!recoveryMode) showLogin();
       return;
     }
     if (session && !recoveryMode && ['SIGNED_IN', 'INITIAL_SESSION', 'TOKEN_REFRESHED'].includes(event)) {
-      window.setTimeout(() => enterAccount(session), 0);
+      if (hasEmployeeActivation()) {
+        window.setTimeout(() => showInvitationActivation(session), 0);
+      } else {
+        window.setTimeout(() => enterAccount(session), 0);
+      }
     }
   });
 
@@ -455,10 +527,14 @@ export async function bootstrapAuth({ onAuthenticated } = {}) {
     return;
   }
 
-  if (recoveryMode && session) {
+  if (session && hasEmployeeActivation()) {
+    showInvitationActivation(session);
+  } else if (recoveryMode && session) {
     showUpdatePassword();
   } else if (session) {
     await enterAccount(session);
+  } else if (!callbackError && hasEmployeeActivation()) {
+    shell(`<div class="auth-heading"><span class="auth-kicker">Activatielink</span><h2>Activatie kon niet worden gestart</h2><p>De beveiligde sessie ontbreekt. Vraag de eigenaar om een nieuwe uitnodiging en open de nieuwste e-mail.</p></div>`, { compact: true });
   } else if (!callbackError) {
     showLogin();
   }

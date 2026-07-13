@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { createHash, randomBytes } from 'node:crypto';
 
 function send(res, status, error, details) {
   return res.status(status).json({ error, ...(details ? { details } : {}) });
@@ -103,6 +104,9 @@ export default async function handler(req, res) {
       return send(res, 409, 'Dit e-mailadres is al als medewerker actief.');
     }
 
+    const activationToken = randomBytes(32).toString('base64url');
+    const activationTokenHash = createHash('sha256').update(activationToken).digest('hex');
+
     // Hergebruik een bestaande openstaande uitnodiging in plaats van deze eerst te
     // verwijderen of te revoken. Dat voorkomt conflicten met de unieke combinatie
     // (organization_id, email, status) en werkt via de RLS-rechten van de eigenaar.
@@ -129,6 +133,8 @@ export default async function handler(req, res) {
           invited_by: userData.user.id,
           expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
           accepted_at: null,
+          activation_token_hash: activationTokenHash,
+          activation_created_at: new Date().toISOString(),
         })
         .eq('id', existingPending.id)
         .select('id')
@@ -146,6 +152,8 @@ export default async function handler(req, res) {
           email,
           role,
           invited_by: userData.user.id,
+          activation_token_hash: activationTokenHash,
+          activation_created_at: new Date().toISOString(),
         })
         .select('id')
         .single();
@@ -156,30 +164,16 @@ export default async function handler(req, res) {
       invitation = newInvitation;
     }
 
-    const redirectTo = `${appUrl.replace(/\/$/, '')}?team_invite=${encodeURIComponent(invitation.id)}`;
+    const redirectTo = `${appUrl.replace(/\/$/, '')}?employee_activation=${encodeURIComponent(activationToken)}`;
     let mailError = null;
 
     if (existingAuthUser) {
-      const { error: metadataError } = await admin.auth.admin.updateUserById(existingAuthUser.id, {
-        user_metadata: {
-          ...(existingAuthUser.user_metadata || {}),
-          team_invitation_id: invitation.id,
-          team_invitation_accepted: false,
-        },
-      });
-      if (metadataError) {
-        console.error('Invite metadata refresh failed', metadataError);
-        return send(res, 500, 'Het bestaande medewerkersaccount kon niet worden voorbereid.');
-      }
       const { error: recoveryError } = await admin.auth.resetPasswordForEmail(email, { redirectTo });
       mailError = recoveryError;
     } else {
       const { error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
         redirectTo,
-        data: {
-          team_invitation_id: invitation.id,
-          team_invitation_accepted: false,
-        },
+        data: { invited_as_team_member: true },
       });
       mailError = inviteError;
     }

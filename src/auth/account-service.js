@@ -40,6 +40,10 @@ export async function ensureAccountWorkspace(user) {
   let organizationId = membership?.organization_id || null;
   let role = membership?.role || 'owner';
 
+  if (!organizationId && user.user_metadata?.invited_as_team_member) {
+    throw new Error('Dit medewerkersaccount is nog niet geactiveerd. Open de nieuwste uitnodigingsmail.');
+  }
+
   if (!organizationId) {
     const { data: ownedOrganization, error: ownedError } = await supabase
       .from('organizations')

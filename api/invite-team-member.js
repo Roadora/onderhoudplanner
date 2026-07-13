@@ -90,17 +90,17 @@ export default async function handler(req, res) {
       return send(res, 500, 'Bestaande medewerkers konden niet worden gecontroleerd.');
     }
 
-    if (existingMember?.length) {
-      const userIds = existingMember.map((item) => item.user_id);
-      const { data: usersResult, error: usersError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      if (usersError) {
-        console.error('Invite auth users lookup failed', usersError);
-        return send(res, 500, 'Bestaande accounts konden niet worden gecontroleerd.');
-      }
-      const alreadyMember = usersResult.users.some(
-        (user) => userIds.includes(user.id) && String(user.email || '').toLowerCase() === email,
-      );
-      if (alreadyMember) return send(res, 409, 'Dit e-mailadres is al als medewerker actief.');
+    const userIds = (existingMember || []).map((item) => item.user_id);
+    const { data: usersResult, error: usersError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (usersError) {
+      console.error('Invite auth users lookup failed', usersError);
+      return send(res, 500, 'Bestaande accounts konden niet worden gecontroleerd.');
+    }
+    const existingAuthUser = usersResult.users.find(
+      (user) => String(user.email || '').toLowerCase() === email,
+    );
+    if (existingAuthUser && userIds.includes(existingAuthUser.id)) {
+      return send(res, 409, 'Dit e-mailadres is al als medewerker actief.');
     }
 
     // Hergebruik een bestaande openstaande uitnodiging in plaats van deze eerst te
@@ -157,17 +157,36 @@ export default async function handler(req, res) {
     }
 
     const redirectTo = `${appUrl.replace(/\/$/, '')}?team_invite=${encodeURIComponent(invitation.id)}`;
-    const { error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
-      redirectTo,
-      data: { team_invitation_id: invitation.id },
-    });
+    let mailError = null;
 
-    if (inviteError) {
-      console.error('Invite email failed', inviteError);
-      const message = /already|registered|exists/i.test(inviteError.message || '')
-        ? 'Voor dit e-mailadres bestaat al een account. Uitnodigen van bestaande accounts voegen we in een volgende stap toe.'
-        : 'De uitnodigingsmail kon niet worden verstuurd.';
-      return send(res, 500, message);
+    if (existingAuthUser) {
+      const { error: metadataError } = await admin.auth.admin.updateUserById(existingAuthUser.id, {
+        user_metadata: {
+          ...(existingAuthUser.user_metadata || {}),
+          team_invitation_id: invitation.id,
+          team_invitation_accepted: false,
+        },
+      });
+      if (metadataError) {
+        console.error('Invite metadata refresh failed', metadataError);
+        return send(res, 500, 'Het bestaande medewerkersaccount kon niet worden voorbereid.');
+      }
+      const { error: recoveryError } = await admin.auth.resetPasswordForEmail(email, { redirectTo });
+      mailError = recoveryError;
+    } else {
+      const { error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
+        redirectTo,
+        data: {
+          team_invitation_id: invitation.id,
+          team_invitation_accepted: false,
+        },
+      });
+      mailError = inviteError;
+    }
+
+    if (mailError) {
+      console.error('Invite email failed', mailError);
+      return send(res, 500, 'De uitnodigingsmail kon niet worden verstuurd.');
     }
 
     return res.status(200).json({ ok: true });

@@ -103,30 +103,57 @@ export default async function handler(req, res) {
       if (alreadyMember) return send(res, 409, 'Dit e-mailadres is al als medewerker actief.');
     }
 
-    const { error: revokeError } = await admin
+    // Hergebruik een bestaande openstaande uitnodiging in plaats van deze eerst te
+    // verwijderen of te revoken. Dat voorkomt conflicten met de unieke combinatie
+    // (organization_id, email, status) en werkt via de RLS-rechten van de eigenaar.
+    const { data: pendingInvitations, error: pendingLookupError } = await userClient
       .from('team_invitations')
-      .update({ status: 'revoked' })
+      .select('id')
       .eq('organization_id', organizationId)
       .eq('email', email)
-      .eq('status', 'pending');
-    if (revokeError) {
-      console.error('Invite revoke failed', revokeError);
-      return send(res, 500, 'Een eerdere uitnodiging kon niet worden vervangen.');
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (pendingLookupError) {
+      console.error('Invite pending lookup failed', pendingLookupError);
+      return send(res, 500, 'Een eerdere uitnodiging kon niet worden gecontroleerd.');
     }
 
-    const { data: invitation, error: invitationError } = await admin
-      .from('team_invitations')
-      .insert({
-        organization_id: organizationId,
-        email,
-        role,
-        invited_by: userData.user.id,
-      })
-      .select('id')
-      .single();
-    if (invitationError) {
-      console.error('Invite insert failed', invitationError);
-      return send(res, 500, 'De uitnodiging kon niet worden opgeslagen.');
+    let invitation;
+    const existingPending = pendingInvitations?.[0];
+    if (existingPending) {
+      const { data: refreshedInvitation, error: refreshError } = await userClient
+        .from('team_invitations')
+        .update({
+          role,
+          invited_by: userData.user.id,
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          accepted_at: null,
+        })
+        .eq('id', existingPending.id)
+        .select('id')
+        .single();
+      if (refreshError) {
+        console.error('Invite refresh failed', refreshError);
+        return send(res, 500, 'De bestaande uitnodiging kon niet worden vernieuwd.');
+      }
+      invitation = refreshedInvitation;
+    } else {
+      const { data: newInvitation, error: invitationError } = await userClient
+        .from('team_invitations')
+        .insert({
+          organization_id: organizationId,
+          email,
+          role,
+          invited_by: userData.user.id,
+        })
+        .select('id')
+        .single();
+      if (invitationError) {
+        console.error('Invite insert failed', invitationError);
+        return send(res, 500, 'De uitnodiging kon niet worden opgeslagen.');
+      }
+      invitation = newInvitation;
     }
 
     const redirectTo = `${appUrl.replace(/\/$/, '')}?team_invite=${encodeURIComponent(invitation.id)}`;
@@ -137,7 +164,6 @@ export default async function handler(req, res) {
 
     if (inviteError) {
       console.error('Invite email failed', inviteError);
-      await admin.from('team_invitations').delete().eq('id', invitation.id);
       const message = /already|registered|exists/i.test(inviteError.message || '')
         ? 'Voor dit e-mailadres bestaat al een account. Uitnodigen van bestaande accounts voegen we in een volgende stap toe.'
         : 'De uitnodigingsmail kon niet worden verstuurd.';

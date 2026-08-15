@@ -39,7 +39,7 @@ export async function listTeamMembers() {
 export async function listPendingInvitations() {
   const account = getAccountContext();
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase.from('team_invitations').select('id,email,role,status,expires_at,created_at').eq('organization_id',account.organization.id).eq('status','pending').order('created_at',{ascending:false});
+  const { data, error } = await supabase.from('team_invitations').select('id,email,role,status,delivery_status,last_sent_at,last_email_error,email_attempts,expires_at,created_at').eq('organization_id',account.organization.id).eq('status','pending').order('created_at',{ascending:false});
   if (error) throw error;
   return data || [];
 }

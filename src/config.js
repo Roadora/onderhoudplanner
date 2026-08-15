@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.9.5 Team-onboarding herbouw';
+export const APP_VERSION = '0.9.6 Rollen, rechten & mail';
 
 // Bewust gelijk aan v0.7, zodat bestaande lokale data eenmalig aan het eerste
 // bedrijfsaccount op dit apparaat gekoppeld kan worden.

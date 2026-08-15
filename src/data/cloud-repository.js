@@ -416,7 +416,7 @@ function downloadLatestRecoveryBackup() {
     return;
   }
   const date = latest.createdAt || new Date();
-  const filename = `onderhoudplanner-noodbackup-${date.toISOString().slice(0, 19).replaceAll(':', '-')}.json`;
+  const filename = `optero-noodbackup-${date.toISOString().slice(0, 19).replaceAll(':', '-')}.json`;
   const blob = new Blob([latest.raw], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');

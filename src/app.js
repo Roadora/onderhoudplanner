@@ -11,6 +11,7 @@ const backBtn = $('#backBtn');
 const fabAdd = $('#fabAdd');
 const notifyBtn = $('#notifyBtn');
 const accountBtn = $('#accountBtn');
+const syncStatusBtn = $('#syncStatus');
 
 const BRAND_OPTIONS = [
   'Daikin','Mitsubishi Electric','LG','Samsung','Panasonic','Toshiba','Fujitsu','Hitachi',
@@ -265,8 +266,25 @@ function contactStatusSelect(s){
   </select>`;
 }
 
+const ROLE_ROUTE_ACCESS = Object.freeze({
+  owner: new Set(['dashboard','customers','agenda','settings','account','team','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications']),
+  planner: new Set(['dashboard','customers','agenda','account','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications']),
+  technician: new Set(['myDay','account']),
+  viewer: new Set(['account'])
+});
+
+function defaultRouteForRole(){
+  if(currentRole === 'technician') return 'myDay';
+  if(currentRole === 'viewer') return 'account';
+  return 'dashboard';
+}
+
+function canAccessRoute(name){
+  return Boolean(ROLE_ROUTE_ACCESS[currentRole]?.has(name));
+}
 function nav(name, params={}){
-  route = {name, ...params};
+  const safeName = canAccessRoute(name) ? name : defaultRouteForRole();
+  route = {name:safeName, ...(safeName===name ? params : {})};
   render();
 }
 
@@ -277,16 +295,17 @@ function updateFab(){
 }
 
 function render(){
+  if(!canAccessRoute(route.name)) route = {name:defaultRouteForRole()};
   document.querySelectorAll('.bottom-nav button').forEach(b=>b.classList.toggle('active',b.dataset.route===route.name));
   backBtn.hidden = ['dashboard','customers','agenda','settings','myDay'].includes(route.name);
   backBtn.onclick = () => navBack();
 
   const titles = {
-    dashboard:'Dashboard', customers:'Klanten', agenda:'Agenda', settings:'Instellingen', account:'Bedrijfsaccount', team:'Medewerkers', myDay:'Mijn dag',
+    dashboard:'Dashboard', customers:'Klanten', agenda:'Agenda', settings:'Instellingen', account:currentRole === 'technician' ? 'Mijn account' : 'Bedrijfsaccount', team:'Medewerkers', myDay:'Mijn dag',
     new:'Nieuwe installatie', detail:'Klantdetail', editCustomer:'Klant bewerken',
     editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails', notifications:'Actielijst'
   };
-  pageTitle.textContent = titles[route.name] || 'OnderhoudPlanner';
+  pageTitle.textContent = titles[route.name] || 'Optero';
 
   if(route.name==='dashboard') dashboard();
   if(route.name==='customers') customers();
@@ -321,10 +340,12 @@ function navBack(){
 }
 
 if(currentRole === 'technician'){
-  document.querySelectorAll('.bottom-nav button').forEach(button=>{
-    button.hidden = true;
-  });
+  document.querySelectorAll('.bottom-nav button').forEach(button=>{ button.hidden = true; });
   fabAdd.hidden = true;
+  if(syncStatusBtn) syncStatusBtn.hidden = true;
+  if(notifyBtn) notifyBtn.hidden = true;
+}else if(currentRole === 'planner'){
+  document.querySelectorAll('.bottom-nav button[data-route="settings"]').forEach(button=>{ button.hidden = true; });
 }
 document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>nav(b.dataset.route));
 if(accountBtn){
@@ -1160,6 +1181,7 @@ function deleteSystem(id){
 }
 
 function settings(){
+  if(currentRole !== 'owner') return nav(defaultRouteForRole());
   const lastUpdate=state.updatedAt ? new Date(state.updatedAt).toLocaleString('nl-NL') : 'Nog niet opgeslagen';
   const account=getAccountContext();
   const recoveryBackups=window.maintenanceCloud?.getRecoveryBackups?.() || [];
@@ -1228,7 +1250,7 @@ function settings(){
       <input id="sheetImport" class="hidden-input" type="file" accept=".xlsx,.xls,.csv,text/csv" onchange="importSpreadsheetFile(this.files[0]);this.value=''">
     </article>
 
-    ${['owner','planner'].includes(currentRole) ? `<article class="card">
+    ${currentRole === 'owner' ? `<article class="card">
       <div class="row between">
         <div><h2>Medewerkers</h2><p class="muted">Nodig planners en monteurs uit voor hun eigen mobiele account.</p></div>
         <button class="smallbtn" type="button" onclick="nav('team')">Beheren</button>
@@ -1293,7 +1315,7 @@ function settings(){
 
 
 async function teamPage(){
-  if(!['owner','planner'].includes(currentRole)) return nav('myDay');
+  if(currentRole !== 'owner') return nav(defaultRouteForRole());
   app.innerHTML = `<section class="screen"><article class="card"><h2>Medewerkers laden…</h2><p class="muted">Even geduld.</p></article></section>`;
   try{
     const [members, invitations] = await Promise.all([listTeamMembers(), listPendingInvitations()]);
@@ -1311,7 +1333,7 @@ async function teamPage(){
           <button class="primary" type="submit" ${members.length>=5?'disabled':''}>Uitnodiging versturen</button>
         </form>
       </article>
-      ${invitations.length?`<article class="card"><h2>Openstaande uitnodigingen</h2><div class="team-list">${invitations.map(i=>`<div class="team-member-row"><div class="team-avatar">✉</div><div class="team-member-copy"><b>${esc(i.email)}</b><span>Verloopt ${new Date(i.expires_at).toLocaleDateString('nl-NL')}</span></div><span class="status-badge paused">${i.role==='planner'?'Planner':'Monteur'}</span></div>`).join('')}</div></article>`:''}
+      ${invitations.length?`<article class="card"><h2>Openstaande uitnodigingen</h2><div class="team-list">${invitations.map(i=>`<div class="team-member-row"><div class="team-avatar">✉</div><div class="team-member-copy"><b>${esc(i.email)}</b><span>${i.delivery_status==='mail_failed'?'E-mail niet verzonden':i.delivery_status==='sent'?'E-mail verzonden':'Wordt verwerkt'} · verloopt ${new Date(i.expires_at).toLocaleDateString('nl-NL')}</span>${i.delivery_status==='mail_failed'&&i.last_email_error?`<small>${esc(i.last_email_error)}</small>`:''}</div><div class="team-invite-actions"><span class="status-badge paused">${i.role==='planner'?'Planner':'Monteur'}</span><button class="smallbtn" type="button" onclick="resendTeamInvitation('${esc(i.email)}','${esc(i.role)}')">Opnieuw sturen</button></div></div>`).join('')}</div></article>`:''}
       <article class="card notice"><b>Volgende bouwstap</b><p>Werkopdrachten worden hierna aan één of meerdere medewerkers gekoppeld. Monteurs zien dan uitsluitend hun eigen dagplanning.</p></article>
     </section>`;
     const form=$('#inviteMemberForm');
@@ -1322,6 +1344,17 @@ async function teamPage(){
       catch(error){ alert(error.message||'Uitnodigen mislukt.'); btn.disabled=false; btn.textContent='Uitnodiging versturen'; }
     };
   }catch(error){ app.innerHTML=`<section class="screen"><article class="card"><h2>Medewerkers konden niet laden</h2><p>${esc(error.message||error)}</p><p class="helper">Voer eerst supabase/team_schema_v090.sql uit en voeg SUPABASE_SERVICE_ROLE_KEY toe in Vercel.</p></article></section>`; }
+}
+
+async function resendTeamInvitation(email, role){
+  if(currentRole !== 'owner') return;
+  try{
+    await inviteTeamMember(email, role);
+    alert('Uitnodiging is opnieuw verstuurd.');
+    await teamPage();
+  }catch(error){
+    alert(error.message || 'Opnieuw versturen mislukt.');
+  }
 }
 
 function myDayPage(){
@@ -1361,12 +1394,12 @@ function accountPage(){
       <div class="cloud-account-icon" aria-hidden="true">✓</div>
       <div>
         <p class="title">Cloudopslag actief</p>
-        <p class="muted">Je account en onderhoudsgegevens worden veilig online opgeslagen en automatisch tussen je apparaten gesynchroniseerd.</p>
+        <p class="muted">${currentRole === 'technician' ? 'Je medewerkersaccount is veilig gekoppeld aan de bedrijfsomgeving. Alleen gegevens waarvoor je bevoegd bent worden in Optero getoond.' : 'Je account en bedrijfsgegevens worden veilig online opgeslagen en automatisch tussen je apparaten gesynchroniseerd.'}</p>
       </div>
     </article>
 
     <article class="card">
-      <button class="secondary full-width" type="button" onclick="nav('settings')">Bedrijfsinstellingen wijzigen</button>
+      ${currentRole === 'owner' ? `<button class="secondary full-width" type="button" onclick="nav('settings')">Bedrijfsinstellingen wijzigen</button>` : ''}
       <button class="danger full-width block-gap" type="button" onclick="maintenanceAccount.signOut()">Uitloggen</button>
     </article>
   </section>`;
@@ -1381,14 +1414,14 @@ function downloadBlob(content,filename,type='application/octet-stream'){
 function fileDate(){ return todayKey().replaceAll('-',''); }
 function exportBackup(){
   save();
-  downloadBlob(JSON.stringify({app:'OnderhoudPlanner',version:APP_VERSION,exportedAt:new Date().toISOString(),data:state},null,2),`onderhoudplanner-backup-${fileDate()}.json`,'application/json');
+  downloadBlob(JSON.stringify({app:'Optero',version:APP_VERSION,exportedAt:new Date().toISOString(),data:state},null,2),`optero-backup-${fileDate()}.json`,'application/json');
 }
 async function importBackupFile(file){
   if(!file) return;
   try{
     const parsed=JSON.parse(await file.text());
     const incoming=parsed.data||parsed;
-    if(!Array.isArray(incoming.customers)||!Array.isArray(incoming.systems)) throw new Error('Geen geldige OnderhoudPlanner-back-up');
+    if(!Array.isArray(incoming.customers)||!Array.isArray(incoming.systems)) throw new Error('Geen geldige Optero-back-up');
     if(!confirm(`Deze back-up bevat ${incoming.customers.length} klanten en ${incoming.systems.length} systemen. Huidige gegevens vervangen?`)) return;
     state=normalizeState(incoming); save(); nav('dashboard'); alert('Back-up is teruggezet.');
   }catch(e){ alert(`Back-up importeren mislukt: ${e.message}`); }
@@ -1405,7 +1438,7 @@ function downloadImportTemplate(){
   const headers=Object.keys(rows[0]);
   const quote=v=>`"${String(v??'').replaceAll('"','""')}"`;
   const csv=[headers.join(';'),headers.map(h=>quote(rows[0][h])).join(';')].join('\n');
-  downloadBlob('\ufeff'+csv,'onderhoudplanner-import-voorbeeld.csv','text/csv;charset=utf-8');
+  downloadBlob('\ufeff'+csv,'optero-import-voorbeeld.csv','text/csv;charset=utf-8');
 }
 
 function normalizeHeader(v=''){
@@ -1593,14 +1626,14 @@ function exportOverviewExcel(){
   const headers=Object.keys(rows[0]);
   const quote=v=>`"${String(v??'').replaceAll('"','""')}"`;
   const csv=[headers.join(';'),...rows.map(r=>headers.map(h=>quote(r[h])).join(';'))].join('\n');
-  downloadBlob('\ufeff'+csv,`onderhoudplanner-overzicht-${fileDate()}.csv`,'text/csv;charset=utf-8');
+  downloadBlob('\ufeff'+csv,`optero-overzicht-${fileDate()}.csv`,'text/csv;charset=utf-8');
 }
 
 async function enableNotifications(){
   if(!('Notification' in window)){alert('Deze browser ondersteunt geen meldingen.');return;}
   const permission=await Notification.requestPermission();
   if(permission==='granted'){
-    new Notification('OnderhoudPlanner',{body:`${actionSystems().length} onderhoudsmomenten vragen aandacht.`,icon:'/icon-192.png'});
+    new Notification('Optero',{body:`${actionSystems().length} onderhoudsmomenten vragen aandacht.`,icon:'/icon-192.png'});
   }else alert('Meldingen zijn niet toegestaan in de browserinstellingen.');
 }
 function checkDueNotification(){
@@ -1608,7 +1641,7 @@ function checkDueNotification(){
     const due=actionSystems().filter(s=>daysUntil(nextDate(s))<=0).length;
     const last=localRepository.getItem(`${KEY}_last_notification`);
     if(due>0 && last!==todayKey()){
-      new Notification('OnderhoudPlanner',{body:`${due} onderhoudsmoment${due===1?'':'en'} zijn nu of eerder gepland.`,icon:'/icon-192.png'});
+      new Notification('Optero',{body:`${due} onderhoudsmoment${due===1?'':'en'} zijn nu of eerder gepland.`,icon:'/icon-192.png'});
       localRepository.setItem(`${KEY}_last_notification`,todayKey());
     }
   }
@@ -1652,14 +1685,17 @@ function deleteCustomer(id){
   nav('customers');
 }
 
-Object.assign(window,{
-  nav,changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,deleteCustomer,resetDemo,
-  deleteAppointment,deleteGenericAppointment,markContacted,setContactStatus,downloadImportTemplate,
-  importSpreadsheetFile,exportBackup,importBackupFile,exportOverviewExcel,enableNotifications,installApp
-});
+const exposedApi = { nav, installApp };
+if(currentRole === 'owner' || currentRole === 'planner'){
+  Object.assign(exposedApi,{changeMonth,selectAgendaDate,goToday,markDone,deleteSystem,deleteCustomer,
+    deleteAppointment,deleteGenericAppointment,markContacted,setContactStatus,downloadImportTemplate,
+    importSpreadsheetFile,exportBackup,importBackupFile,exportOverviewExcel,enableNotifications});
+}
+if(currentRole === 'owner') Object.assign(exposedApi,{resetDemo,resendTeamInvitation});
+Object.assign(window,exposedApi);
 
-notifyBtn.onclick=()=>nav('notifications');
+if(notifyBtn) notifyBtn.onclick=()=>nav('notifications');
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPrompt=e;});
 window.addEventListener('appinstalled',()=>{deferredInstallPrompt=null;});
 render();
-setTimeout(checkDueNotification,800);
+if(currentRole !== 'technician') setTimeout(checkDueNotification,800);

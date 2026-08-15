@@ -69,6 +69,16 @@ export default async function handler(req, res) {
     if (membership.role !== 'owner') return send(res, 403, 'Alleen de eigenaar kan medewerkers uitnodigen.');
 
     const organizationId = membership.organization_id;
+    const { data: organization, error: organizationError } = await userClient
+      .from('organizations')
+      .select('name')
+      .eq('id', organizationId)
+      .single();
+    if (organizationError) {
+      console.error('Invite organization lookup failed', organizationError);
+      return send(res, 500, 'De bedrijfsomgeving kon niet worden geladen.');
+    }
+    const organizationName = String(organization?.name || 'je bedrijf');
 
     const { count, error: countError } = await userClient
       .from('organization_members')
@@ -135,6 +145,9 @@ export default async function handler(req, res) {
           accepted_at: null,
           activation_token_hash: activationTokenHash,
           activation_created_at: new Date().toISOString(),
+          delivery_status: 'sending',
+          last_email_error: null,
+          email_attempts: 0,
         })
         .eq('id', existingPending.id)
         .select('id')
@@ -154,6 +167,9 @@ export default async function handler(req, res) {
           invited_by: userData.user.id,
           activation_token_hash: activationTokenHash,
           activation_created_at: new Date().toISOString(),
+          delivery_status: 'sending',
+          last_email_error: null,
+          email_attempts: 0,
         })
         .select('id')
         .single();
@@ -165,23 +181,67 @@ export default async function handler(req, res) {
     }
 
     const redirectTo = `${appUrl.replace(/\/$/, '')}?employee_activation=${encodeURIComponent(activationToken)}`;
+    const roleLabel = role === 'planner' ? 'planner' : 'monteur';
     let mailError = null;
 
     if (existingAuthUser) {
-      const { error: recoveryError } = await admin.auth.resetPasswordForEmail(email, { redirectTo });
-      mailError = recoveryError;
+      // Bestaande accounts ontvangen de recovery-template, maar met Optero-context in metadata.
+      const existingMetadata = existingAuthUser.user_metadata || {};
+      const { error: metadataError } = await admin.auth.admin.updateUserById(existingAuthUser.id, {
+        user_metadata: {
+          ...existingMetadata,
+          invited_as_team_member: true,
+          optero_invite_company: organizationName,
+          optero_invite_role: roleLabel,
+        },
+      });
+      if (metadataError) {
+        console.error('Invite metadata update failed', metadataError);
+        mailError = metadataError;
+      } else {
+        const { error: recoveryError } = await admin.auth.resetPasswordForEmail(email, { redirectTo });
+        mailError = recoveryError;
+      }
     } else {
       const { error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
         redirectTo,
-        data: { invited_as_team_member: true },
+        data: {
+          invited_as_team_member: true,
+          optero_invite_company: organizationName,
+          optero_invite_role: roleLabel,
+        },
       });
       mailError = inviteError;
     }
 
     if (mailError) {
       console.error('Invite email failed', mailError);
-      return send(res, 500, 'De uitnodigingsmail kon niet worden verstuurd.');
+      const rawMessage = String(mailError?.message || 'Onbekende e-mailfout');
+      const isRateLimit = /rate limit|too many/i.test(rawMessage);
+      const safeError = isRateLimit
+        ? 'De e-maillimiet is tijdelijk bereikt. Probeer de uitnodiging later opnieuw te versturen.'
+        : 'De uitnodiging staat klaar, maar de e-mail kon niet worden verzonden.';
+      await userClient
+        .from('team_invitations')
+        .update({
+          delivery_status: 'mail_failed',
+          last_email_error: safeError,
+          email_attempts: 1,
+        })
+        .eq('id', invitation.id);
+      return send(res, isRateLimit ? 429 : 502, safeError);
     }
+
+    const { error: deliveryUpdateError } = await userClient
+      .from('team_invitations')
+      .update({
+        delivery_status: 'sent',
+        last_sent_at: new Date().toISOString(),
+        last_email_error: null,
+        email_attempts: 1,
+      })
+      .eq('id', invitation.id);
+    if (deliveryUpdateError) console.error('Invite delivery status update failed', deliveryUpdateError);
 
     return res.status(200).json({ ok: true });
   } catch (error) {

@@ -56,8 +56,8 @@ function shell(content, { compact = false } = {}) {
         <div class="auth-brand">
           <img src="/icon-192.png" alt="" width="54" height="54">
           <div>
-            <p class="eyebrow">OnderhoudPlanner</p>
-            <h1>Maak onderhoud terugkerend</h1>
+            <p class="eyebrow">Optero</p>
+            <h1>Van opdracht naar uitvoering</h1>
           </div>
         </div>
         ${content}
@@ -102,7 +102,7 @@ function showLogin(message = '', messageType = 'info') {
     <div class="auth-heading">
       <span class="auth-kicker">Bedrijfsaccount</span>
       <h2>Inloggen</h2>
-      <p>Open je eigen afgeschermde onderhoudsomgeving.</p>
+      <p>Open je beveiligde Optero-werkomgeving.</p>
     </div>
     ${messageBox(message, messageType)}
     <form class="auth-form" id="loginForm">
@@ -111,7 +111,7 @@ function showLogin(message = '', messageType = 'info') {
       <button class="primary" type="submit">Inloggen</button>
     </form>
     <button class="auth-link" id="forgotPasswordBtn" type="button">Wachtwoord vergeten?</button>
-    <div class="auth-divider"><span>Nieuw bij OnderhoudPlanner?</span></div>
+    <div class="auth-divider"><span>Nieuw bij Optero?</span></div>
     <button class="secondary full-width" id="openRegisterBtn" type="button">Bedrijfsaccount aanmaken</button>
   `);
 
@@ -204,7 +204,7 @@ function showEmailConfirmation(email, message = '') {
     <div class="auth-heading centered">
       <span class="auth-kicker">E-mailbevestiging vereist</span>
       <h2>Controleer je inbox</h2>
-      <p>We hebben een bevestigingslink gestuurd naar <strong>${esc(email)}</strong>. Na bevestiging kom je terug in OnderhoudPlanner.</p>
+      <p>We hebben een bevestigingslink gestuurd naar <strong>${esc(email)}</strong>. Na bevestiging kom je terug in Optero.</p>
     </div>
     ${messageBox(message, message ? 'success' : 'info')}
     <button class="primary" id="resendConfirmationBtn" type="button">Bevestigingsmail opnieuw sturen</button>
@@ -410,18 +410,16 @@ function maybeClaimLegacyData(companyName) {
   if (claimedBy && claimedBy !== organizationId) return;
 
   const useExisting = window.confirm(
-    `Er staan bestaande OnderhoudPlanner-gegevens in deze browser. Wil je deze koppelen aan het bedrijfsaccount “${companyName}”?`
+    `Er staan bestaande Optero-gegevens in deze browser. Wil je deze koppelen aan het bedrijfsaccount “${companyName}”?`
   );
   if (useExisting) claimLegacyLocalData(STORAGE_KEY, LEGACY_STORAGE_KEYS);
 }
 
 function exposeAccountApi() {
-  window.maintenanceAccount = Object.freeze({
-    getContext: getAccountContext,
-    signOut,
-    updateOrganizationName,
-    updateProfileName
-  });
+  const role = getAccountContext()?.membership?.role || '';
+  const api = { getContext: getAccountContext, signOut, updateProfileName };
+  if (role === 'owner') api.updateOrganizationName = updateOrganizationName;
+  window.maintenanceAccount = Object.freeze(api);
 }
 
 async function signOut() {

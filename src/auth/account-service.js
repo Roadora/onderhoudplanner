@@ -29,8 +29,9 @@ export async function ensureAccountWorkspace(user) {
 
   const { data: membership, error: membershipError } = await supabase
     .from('organization_members')
-    .select('organization_id,role,created_at')
+    .select('organization_id,role,status,created_at')
     .eq('user_id', user.id)
+    .eq('status', 'active')
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -39,6 +40,7 @@ export async function ensureAccountWorkspace(user) {
 
   let organizationId = membership?.organization_id || null;
   let role = membership?.role || 'owner';
+  let membershipStatus = membership?.status || 'active';
 
   if (!organizationId && user.user_metadata?.invited_as_team_member) {
     throw new Error('Dit medewerkersaccount is nog niet geactiveerd. Open de nieuwste uitnodigingsmail.');
@@ -105,7 +107,8 @@ export async function ensureAccountWorkspace(user) {
     membership: {
       organization_id: organizationId,
       user_id: user.id,
-      role
+      role,
+      status: membershipStatus
     }
   };
 }

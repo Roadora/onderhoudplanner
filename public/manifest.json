@@ -1,7 +1,7 @@
 {
-  "name": "OnderhoudPlanner",
-  "short_name": "Onderhoud",
-  "description": "Onderhoudsplanning voor airco's en warmtepompen",
+  "name": "Optero",
+  "short_name": "Optero",
+  "description": "Van opdracht naar planning, uitvoering en onderhoud.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -9,8 +9,23 @@
   "background_color": "#f4f7fb",
   "theme_color": "#0757c8",
   "icons": [
-    {"src":"/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
-    {"src":"/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
-    {"src":"/icon-maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }

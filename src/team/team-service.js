@@ -55,3 +55,29 @@ export async function inviteTeamMember(email, role) {
   if (!response.ok) throw new Error(payload.error || 'Uitnodigen mislukt.');
   return payload;
 }
+
+export async function getAppointmentAssignments(appointmentId) {
+  const account = getAccountContext();
+  const supabase = getSupabaseClient();
+  if (!account?.organization?.id || !appointmentId) return [];
+  const { data, error } = await supabase
+    .from('work_order_assignments')
+    .select('user_id,work_status,started_at,completed_at')
+    .eq('organization_id', account.organization.id)
+    .eq('appointment_id', appointmentId);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function setAppointmentAssignments(appointmentId, userIds = []) {
+  const account = getAccountContext();
+  const supabase = getSupabaseClient();
+  const cleanIds = [...new Set((userIds || []).filter(Boolean))];
+  const { error } = await supabase.rpc('set_appointment_assignments', {
+    p_organization_id: account.organization.id,
+    p_appointment_id: appointmentId,
+    p_user_ids: cleanIds
+  });
+  if (error) throw error;
+  return cleanIds;
+}

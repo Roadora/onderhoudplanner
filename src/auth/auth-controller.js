@@ -15,7 +15,7 @@ import {
   getAccountContext,
   setAccountContext
 } from '../account-context.js';
-import { claimLegacyLocalData, localRepository } from '../data/local-repository.js';
+import { claimLegacyLocalData, clearCurrentUserLocalData, localRepository } from '../data/local-repository.js';
 import {
   clearActivationUrl,
   completeTeamInvitation,
@@ -429,6 +429,7 @@ async function signOut() {
   } catch (error) {
     console.warn('Laatste cloudsynchronisatie voor uitloggen mislukt', error);
   }
+  clearCurrentUserLocalData();
   activeUserId = '';
   setAccountContext(null);
   await supabase?.auth.signOut();

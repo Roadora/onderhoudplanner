@@ -1,7 +1,7 @@
 import { STORAGE_KEY } from '../config.js';
 import { getAccountContext, getOrganizationId } from '../account-context.js';
 import { getSupabaseClient } from '../lib/supabase.js';
-import { localRepository, observeLocalWrites } from './local-repository.js';
+import { localRepository, observeLocalWrites, migrateOrganizationCacheToCurrentUser } from './local-repository.js';
 
 const DEFAULT_WHATSAPP = 'Hallo {naam}, volgens onze planning is het weer tijd voor onderhoud aan uw {systeem}. Zullen we een afspraak inplannen? Groet, {bedrijf}';
 const SYNC_DELAY_MS = 650;
@@ -385,7 +385,8 @@ export function getCloudStatus() {
 function recoveryBackups() {
   const organizationId = getOrganizationId();
   if (!organizationId) return [];
-  const suffix = `::organization::${organizationId}`;
+  const userId = getAccountContext()?.user?.id || '';
+  const suffix = userId ? `::organization::${organizationId}::user::${userId}` : `::organization::${organizationId}`;
   const prefix = `${STORAGE_KEY}_`;
   const backups = [];
   for (let index = 0; index < window.localStorage.length; index += 1) {
@@ -448,6 +449,7 @@ async function refreshFromCloudWhenNewer() {
 
 export async function bootstrapCloudData() {
   emitStatus('loading', 'Cloud laden…', 'Bedrijfsgegevens worden opgehaald.');
+  migrateOrganizationCacheToCurrentUser(STORAGE_KEY);
 
   const cloud = await fetchCloudState();
   cloudRevision = cloud.revision;
@@ -526,6 +528,48 @@ export async function bootstrapCloudData() {
     }
   });
 
+  updateStatusElement();
+  return activeState;
+}
+
+
+
+export async function bootstrapTechnicianData() {
+  const supabase = getSupabaseClient();
+  const account = getAccountContext();
+  const organizationId = getOrganizationId();
+  if (!supabase || !organizationId || account?.membership?.role !== 'technician') {
+    throw new Error('Monteursomgeving ontbreekt.');
+  }
+
+  emitStatus('loading', 'Mijn werk laden…', 'Alleen jouw toegewezen werkzaamheden worden opgehaald.');
+  const today = new Date();
+  const from = today.toISOString().slice(0, 10);
+  const untilDate = new Date(today);
+  untilDate.setDate(untilDate.getDate() + 14);
+  const until = untilDate.toISOString().slice(0, 10);
+  const { data, error } = await supabase.rpc('get_my_assigned_work', {
+    p_organization_id: organizationId,
+    p_from: from,
+    p_until: until
+  });
+  if (error) throw enhanceCloudError(error);
+
+  const payload = data || {};
+  const activeState = cloudRowsToState(
+    null,
+    payload.customers || [],
+    payload.installations || [],
+    payload.appointments || []
+  );
+  activeState.company = account?.organization?.name || 'Optero';
+  activeState.settings.companyName = activeState.company;
+  activeState.settings.contactName = account?.profile?.full_name || '';
+  localRepository.setItem(STORAGE_KEY, JSON.stringify(activeState), { silent: true });
+  cloudReady = false;
+  removeWriteObserver?.();
+  removeWriteObserver = null;
+  emitStatus('saved', 'Mijn werk geladen', `${activeState.appointments.length} toegewezen opdracht(en)`);
   updateStatusElement();
   return activeState;
 }

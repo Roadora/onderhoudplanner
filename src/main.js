@@ -1,15 +1,14 @@
 import './styles.css';
 import { registerServiceWorker } from './pwa.js';
 import { bootstrapAuth } from './auth/auth-controller.js';
-import { bootstrapCloudData } from './data/cloud-repository.js';
+import { bootstrapCloudData, bootstrapTechnicianData } from './data/cloud-repository.js';
 
 registerServiceWorker();
 
 bootstrapAuth({
   onAuthenticated: async (context) => {
-    // Monteurs krijgen in v0.9.0 nog geen volledige bedrijfsdataset.
-    // Werkopdrachtfiltering wordt in de volgende stap toegevoegd.
-    if (context?.membership?.role !== 'technician') await bootstrapCloudData();
+    if (context?.membership?.role === 'technician') await bootstrapTechnicianData();
+    else await bootstrapCloudData();
     await import('./app.js');
   }
 }).catch(error => {

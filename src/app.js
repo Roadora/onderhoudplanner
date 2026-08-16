@@ -1,7 +1,8 @@
 import { APP_VERSION, STORAGE_KEY as KEY, LEGACY_STORAGE_KEYS as LEGACY_KEYS } from './config.js';
 import { localRepository } from './data/local-repository.js';
 import { getAccountContext } from './account-context.js';
-import { listTeamMembers, listPendingInvitations, inviteTeamMember } from './team/team-service.js';
+import { listTeamMembers, listPendingInvitations, inviteTeamMember, getAppointmentAssignments, setAppointmentAssignments } from './team/team-service.js';
+import { flushCloudSync } from './data/cloud-repository.js';
 
 const $ = (s) => document.querySelector(s);
 const field = (form, name) => form?.elements?.namedItem(name) || null;
@@ -269,7 +270,7 @@ function contactStatusSelect(s){
 const ROLE_ROUTE_ACCESS = Object.freeze({
   owner: new Set(['dashboard','customers','agenda','settings','account','team','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications']),
   planner: new Set(['dashboard','customers','agenda','account','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications']),
-  technician: new Set(['myDay','account']),
+  technician: new Set(['myDay','account','appointmentDetail']),
   viewer: new Set(['account'])
 });
 
@@ -328,7 +329,7 @@ function render(){
 }
 
 function navBack(){
-  if(route.name==='appointmentDetail') return nav('dayPlan',{date:route.date || todayKey(),back:'agenda'});
+  if(route.name==='appointmentDetail') return nav(currentRole==='technician' ? 'myDay' : 'dayPlan',{date:route.date || todayKey(),back:'agenda'});
   if(route.name==='notifications' || route.name==='account' || route.name==='team') return nav(currentRole === 'technician' ? 'myDay' : 'dashboard');
   if(route.name==='detail') return nav(route.back || 'dashboard');
   if(route.name==='editCustomer') return nav('detail',{customerId:route.customerId,back:'customers'});
@@ -567,7 +568,7 @@ function appointmentCard(a){
         <p class="muted">${subtitle}</p>
         ${a.note && s ? `<p class="muted">${esc(a.note)}</p>` : ''}
       </div>
-      <button class="edit-btn" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'agenda'})">✏️</button>
+      ${currentRole==='technician'?`<button class="edit-btn" aria-label="Open opdracht" onclick="nav('appointmentDetail',{appointmentId:'${a.id}',back:'myDay'})">›</button>`:`<button class="edit-btn" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'agenda'})">✏️</button>`}
     </div>
     <div class="actions">
       <a class="secondary" href="tel:${c.phone||''}">📞 Bel</a>
@@ -631,8 +632,7 @@ function appointmentDetail(id){
       </div>
     </article>` : ''}
 
-    <button class="primary" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'appointmentDetail'})">✏️ Afspraak bewerken</button>
-    <button class="danger" style="width:100%;margin-top:10px" onclick="deleteGenericAppointment('${a.id}')">🗑 Afspraak verwijderen</button>
+    ${currentRole==='technician'?'':`<button class="primary" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'appointmentDetail'})">✏️ Afspraak bewerken</button><button class="danger" style="width:100%;margin-top:10px" onclick="deleteGenericAppointment('${a.id}')">🗑 Afspraak verwijderen</button>`}
   </section>`;
 }
 
@@ -884,7 +884,7 @@ function editCustomer(id){
   </section>`;
 
   const f=$('#editCustomerForm');
-  f.onsubmit=(e)=>{
+  f.onsubmit=async (e)=>{
     e.preventDefault();
     c.name=field(f,'name').value.trim() || c.name;
     c.address=field(f,'address').value.trim();
@@ -993,13 +993,51 @@ function newInstall(){
 }
 
 
-function newAppointment(){
+
+async function assignmentEditorData(appointmentId=''){
+  if(currentRole === 'technician') return {members:[],selected:new Set()};
+  try{
+    const [members, assignments] = await Promise.all([
+      listTeamMembers(),
+      appointmentId ? getAppointmentAssignments(appointmentId) : Promise.resolve([])
+    ]);
+    return {
+      members:(members||[]).filter(m=>m.status==='active' && ['technician','planner','owner'].includes(m.role)),
+      selected:new Set((assignments||[]).map(a=>a.user_id))
+    };
+  }catch(error){
+    console.warn('Werktoewijzing laden mislukt', error);
+    return {members:[],selected:new Set()};
+  }
+}
+
+function assignmentEditorHtml(members=[], selected=new Set()){
+  if(!members.length) return `<div class="field"><label>Medewerkers</label><p class="helper">Nog geen actieve medewerkers beschikbaar.</p></div>`;
+  return `<div class="field"><label>Toewijzen aan</label><div class="assignment-list">${members.map(m=>`<label class="assignment-option"><input type="checkbox" name="assignedUsers" value="${esc(m.user_id)}" ${selected.has(m.user_id)?'checked':''}><span><b>${esc(m.display_name||m.email||'Gebruiker')}</b><small>${m.role==='technician'?'Monteur':m.role==='planner'?'Planner':'Eigenaar'}</small></span></label>`).join('')}</div><p class="helper">Je kunt één of meerdere medewerkers aan deze opdracht koppelen.</p></div>`;
+}
+
+function selectedAssignmentUserIds(form){
+  return [...form.querySelectorAll('input[name="assignedUsers"]:checked')].map(input=>input.value);
+}
+
+async function persistAssignments(appointmentId, form){
+  try{
+    await flushCloudSync();
+    await setAppointmentAssignments(appointmentId, selectedAssignmentUserIds(form));
+  }catch(error){
+    console.error('Werktoewijzing opslaan mislukt', error);
+    alert(`De afspraak is opgeslagen, maar de medewerkerstoewijzing niet: ${error?.message || 'onbekende fout'}`);
+  }
+}
+
+async function newAppointment(){
   const existing = route.appointmentId ? appointments().find(a=>a.id===route.appointmentId) : null;
   const customerId = existing?.customerId || route.customerId || state.customers[0]?.id || '';
   const dateValue = existing?.date || route.date || selectedAgendaDate || todayKey();
   const timeValue = existing?.time || '09:00';
   const typeValue = existing?.type || 'plaatsing';
   const noteValue = existing?.note || '';
+  const assignmentData = await assignmentEditorData(existing?.id || '');
 
   app.innerHTML = `<section class="screen">
     <form class="form" id="genericAppointmentForm">
@@ -1040,6 +1078,7 @@ function newAppointment(){
           <div class="field"><label>Tijd</label><input name="time" type="time" value="${timeValue}"></div>
         </div>
         <div class="field"><label>Notitie</label><textarea name="note" rows="3" placeholder="Bijv. nieuwe airco plaatsen slaapkamer">${esc(noteValue)}</textarea></div>
+        ${assignmentEditorHtml(assignmentData.members, assignmentData.selected)}
       </article>
       <button class="primary" type="submit">Afspraak opslaan</button>
       ${existing?`<button class="danger" type="button" onclick="deleteGenericAppointment('${existing.id}')">Afspraak verwijderen</button>`:''}
@@ -1053,7 +1092,7 @@ function newAppointment(){
   };
   field(f,'customerId').onchange=toggleNewCustomerFields;
   toggleNewCustomerFields();
-  f.onsubmit=(e)=>{
+  f.onsubmit=async (e)=>{
     e.preventDefault();
     let appointmentCustomerId=field(f,'customerId').value;
     if(appointmentCustomerId==='__new__'){
@@ -1070,6 +1109,7 @@ function newAppointment(){
       state.customers.push(newCustomer);
       appointmentCustomerId=newCustomer.id;
     }
+    let savedAppointmentId='';
     if(existing){
       existing.type=field(f,'type').value;
       existing.customerId=appointmentCustomerId;
@@ -1077,8 +1117,9 @@ function newAppointment(){
       existing.date=field(f,'date').value;
       existing.time=field(f,'time').value;
       existing.note=field(f,'note').value.trim();
+      savedAppointmentId=existing.id;
     }else{
-      state.appointments.push({
+      const created={
         id:uid(),
         type:field(f,'type').value,
         customerId:appointmentCustomerId,
@@ -1086,9 +1127,12 @@ function newAppointment(){
         date:field(f,'date').value,
         time:field(f,'time').value,
         note:field(f,'note').value.trim()
-      });
+      };
+      state.appointments.push(created);
+      savedAppointmentId=created.id;
     }
     save();
+    await persistAssignments(savedAppointmentId, f);
     selectedAgendaDate=field(f,'date').value;
     calendarMonth=new Date(field(f,'date').value+'T12:00:00');
     nav('agenda');
@@ -1101,7 +1145,7 @@ function deleteGenericAppointment(id){
   nav('agenda');
 }
 
-function planAppointment(systemId){
+async function planAppointment(systemId){
   const s=systemById(systemId);
   if(!s) return nav('agenda');
   if(s.serviceStatus==='declined'){ alert('Deze klant wil geen onderhoud. Zet de status eerst terug op actief.'); return nav('detail',{customerId:s.customerId,back:'customers'}); }
@@ -1110,6 +1154,7 @@ function planAppointment(systemId){
   const dateValue = existing ? existing.date : nextDate(s);
   const timeValue = existing ? existing.time : '09:00';
   const noteValue = existing ? existing.note : 'Jaarlijks onderhoud';
+  const assignmentData = await assignmentEditorData(existing?.id || '');
 
   app.innerHTML = `<section class="screen">
     <form class="form" id="appointmentForm">
@@ -1123,6 +1168,7 @@ function planAppointment(systemId){
         <div class="field"><label>Datum</label><input name="date" type="date" value="${dateValue}" required></div>
         <div class="field"><label>Tijd</label><input name="time" type="time" value="${timeValue}"></div>
         <div class="field"><label>Notitie</label><textarea name="note" rows="3" placeholder="Bijv. jaarlijks onderhoud">${esc(noteValue)}</textarea></div>
+        ${assignmentEditorHtml(assignmentData.members, assignmentData.selected)}
       </article>
       <button class="primary" type="submit">Afspraak opslaan</button>
       ${existing?`<button class="danger" type="button" onclick="deleteAppointment('${existing.id}','${systemId}')">Afspraak verwijderen</button>`:''}
@@ -1130,17 +1176,22 @@ function planAppointment(systemId){
   </section>`;
 
   const f=$('#appointmentForm');
-  f.onsubmit=(e)=>{
+  f.onsubmit=async (e)=>{
     e.preventDefault();
+    let savedAppointmentId='';
     if(existing){
       existing.date=field(f,'date').value;
       existing.time=field(f,'time').value;
       existing.note=field(f,'note').value.trim();
+      savedAppointmentId=existing.id;
     }else{
-      state.appointments.push({id:uid(),type:'onderhoud',customerId:s.customerId,systemId,date:field(f,'date').value,time:field(f,'time').value,note:field(f,'note').value.trim()});
+      const created={id:uid(),type:'onderhoud',customerId:s.customerId,systemId,date:field(f,'date').value,time:field(f,'time').value,note:field(f,'note').value.trim()};
+      state.appointments.push(created);
+      savedAppointmentId=created.id;
     }
     s.contactStatus='scheduled';
     save();
+    await persistAssignments(savedAppointmentId, f);
     selectedAgendaDate=field(f,'date').value;
     calendarMonth=new Date(field(f,'date').value+'T12:00:00');
     nav('agenda');

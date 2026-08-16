@@ -12,7 +12,9 @@ export default async function handler(req, res) {
     const url = process.env.VITE_SUPABASE_URL;
     const anon = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
     const service = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const appUrl = process.env.VITE_APP_URL || 'https://onderhoudplanner.vercel.app';
+    const forwardedProto = req.headers['x-forwarded-proto'] || 'https';
+    const forwardedHost = req.headers['x-forwarded-host'] || req.headers.host || 'optero.nl';
+    const appUrl = process.env.VITE_APP_URL || `${forwardedProto}://${forwardedHost}`;
 
     if (!url || !anon || !service) {
       console.error('Invite config missing', { url: Boolean(url), anon: Boolean(anon), service: Boolean(service) });

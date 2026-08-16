@@ -544,9 +544,12 @@ export async function bootstrapTechnicianData() {
 
   emitStatus('loading', 'Mijn werk laden…', 'Alleen jouw toegewezen werkzaamheden worden opgehaald.');
   const today = new Date();
-  const from = today.toISOString().slice(0, 10);
+  // De monteurskalender heeft voldoende historie en vooruitblik nodig om als echte agenda te werken.
+  const fromDate = new Date(today);
+  fromDate.setDate(fromDate.getDate() - 31);
+  const from = fromDate.toISOString().slice(0, 10);
   const untilDate = new Date(today);
-  untilDate.setDate(untilDate.getDate() + 14);
+  untilDate.setDate(untilDate.getDate() + 365);
   const until = untilDate.toISOString().slice(0, 10);
   const { data, error } = await supabase.rpc('get_my_assigned_work', {
     p_organization_id: organizationId,

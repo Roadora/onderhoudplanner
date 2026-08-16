@@ -1408,13 +1408,61 @@ async function resendTeamInvitation(email, role){
   }
 }
 
+function technicianCalendarGrid(){
+  const y=calendarMonth.getFullYear();
+  const m=calendarMonth.getMonth();
+  const first=new Date(y,m,1);
+  const daysInMonth=new Date(y,m+1,0).getDate();
+  const offset=(first.getDay()+6)%7;
+  const weekdays=['Ma','Di','Wo','Do','Vr','Za','Zo'];
+  const eventDates=new Set(appointments().map(a=>a.date));
+  let cells='';
+  for(let i=0;i<offset;i++) cells += '<button class="calendar-day blank" disabled></button>';
+  for(let day=1;day<=daysInMonth;day++){
+    const key=toDateKey(new Date(y,m,day));
+    const has=eventDates.has(key);
+    const active=selectedAgendaDate===key;
+    const today=todayKey()===key;
+    cells += `<button class="calendar-day ${has?'has-event':''} ${active?'active':''} ${today?'today':''}" onclick="selectTechnicianDate('${key}')"><span>${day}</span>${has?'<i></i>':''}</button>`;
+  }
+  return `<div class="calendar-weekdays">${weekdays.map(w=>`<span>${w}</span>`).join('')}</div><div class="calendar-grid">${cells}</div>`;
+}
+
+function selectTechnicianDate(key){
+  selectedAgendaDate=key;
+  myDayPage();
+}
+
+function technicianChangeMonth(dir){
+  calendarMonth=new Date(calendarMonth.getFullYear(),calendarMonth.getMonth()+dir,1);
+  const today=new Date();
+  const isCurrentMonth=calendarMonth.getFullYear()===today.getFullYear() && calendarMonth.getMonth()===today.getMonth();
+  selectedAgendaDate=isCurrentMonth ? todayKey() : toDateKey(new Date(calendarMonth.getFullYear(),calendarMonth.getMonth(),1));
+  myDayPage();
+}
+
+function technicianGoToday(){
+  calendarMonth=new Date();
+  selectedAgendaDate=todayKey();
+  myDayPage();
+}
+
 function myDayPage(){
-  const items=appointmentsOnDate(todayKey());
+  const selected=selectedAgendaDate || todayKey();
+  const items=appointmentsOnDate(selected);
+  const isToday=selected===todayKey();
   app.innerHTML=`<section class="screen my-day-screen">
-    <article class="hero"><div><p class="eyebrow">Mijn werkdag</p><h2>${fmt(todayKey())}</h2><p>${items.length} ${items.length===1?'opdracht':'opdrachten'} gepland</p></div></article>
-    <div class="sectionhead"><h2>Vandaag</h2></div>
-    ${items.length?items.map(appointmentCard).join(''):'<article class="card empty">Er staan vandaag nog geen opdrachten in je planning.</article>'}
-    <article class="card"><h2>Medewerkeromgeving</h2><p class="muted">In de volgende versie worden alleen opdrachten getoond die aan jouw account zijn toegewezen, met route-, bel-, start- en afrondknoppen.</p></article>
+    <article class="card calendar-card technician-calendar">
+      <div class="calendar-head">
+        <button class="smallbtn" aria-label="Vorige maand" onclick="technicianChangeMonth(-1)">‹</button>
+        <strong>${monthLabel(calendarMonth)}</strong>
+        <button class="smallbtn" aria-label="Volgende maand" onclick="technicianChangeMonth(1)">›</button>
+      </div>
+      ${technicianCalendarGrid()}
+      ${!isToday?'<button class="smallbtn wide technician-today-btn" onclick="technicianGoToday()">Naar vandaag</button>':''}
+    </article>
+    <div class="technician-day-heading"><div><p class="eyebrow">${isToday?'Vandaag':'Mijn planning'}</p><h2>${fmt(selected)}</h2></div><span>${items.length} ${items.length===1?'opdracht':'opdrachten'}</span></div>
+    ${items.length?items.map(appointmentCard).join(''):`<article class="card empty">Geen opdrachten gepland op ${isToday?'vandaag':fmt(selected)}.</article>`}
   </section>`;
 }
 
@@ -1743,6 +1791,7 @@ if(currentRole === 'owner' || currentRole === 'planner'){
     importSpreadsheetFile,exportBackup,importBackupFile,exportOverviewExcel,enableNotifications});
 }
 if(currentRole === 'owner') Object.assign(exposedApi,{resetDemo,resendTeamInvitation});
+if(currentRole === 'technician') Object.assign(exposedApi,{selectTechnicianDate,technicianChangeMonth,technicianGoToday});
 Object.assign(window,exposedApi);
 
 if(notifyBtn) notifyBtn.onclick=()=>nav('notifications');

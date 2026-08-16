@@ -361,3 +361,20 @@ body.auth-active{background:#edf3fb}
 
 /* v0.9.7 — medewerkerstoewijzing */
 .assignment-list{display:grid;gap:10px;margin-top:8px}.assignment-option{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #dfe6f1;border-radius:14px;background:#f9fbff;cursor:pointer}.assignment-option input{width:18px;height:18px;accent-color:#1261c9}.assignment-option span{display:flex;flex-direction:column;gap:2px}.assignment-option small{color:#7a8598;font-size:12px}.assignment-option:has(input:checked){border-color:#8fb8ef;background:#eef5ff}
+
+
+/* v0.9.8 — monteurskalender en opgeschoonde mobiele planning */
+.my-day-screen{padding-top:14px}
+.my-day-screen .technician-calendar{margin-bottom:18px}
+.technician-calendar .calendar-head strong{font-size:1.05rem}
+.technician-calendar .calendar-day{min-width:0}
+.technician-calendar .calendar-day.has-event i{background:var(--blue,#0757c8);width:7px;height:7px}
+.technician-calendar .calendar-day.active{background:var(--blue,#0757c8);border-color:var(--blue,#0757c8);color:#fff}
+.technician-calendar .calendar-day.active i{background:#fff}
+.technician-calendar .calendar-day.today:not(.active){box-shadow:inset 0 0 0 2px rgba(7,87,200,.35)}
+.technician-today-btn{margin-top:14px}
+.technician-day-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:4px 2px 12px}
+.technician-day-heading .eyebrow{margin:0 0 3px;color:var(--blue,#0757c8);font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+.technician-day-heading h2{margin:0;font-size:1.3rem}
+.technician-day-heading>span{font-size:.82rem;color:var(--muted,#697386);white-space:nowrap;padding-bottom:2px}
+@media (max-width:420px){.my-day-screen{padding-left:14px;padding-right:14px}.technician-calendar{padding:12px}.technician-calendar .calendar-grid,.technician-calendar .calendar-weekdays{gap:3px}.technician-calendar .calendar-day{height:40px;border-radius:10px}.technician-day-heading{align-items:flex-start;flex-direction:column;gap:2px}}

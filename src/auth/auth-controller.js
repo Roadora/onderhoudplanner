@@ -1,7 +1,5 @@
 import {
   APP_VERSION,
-  STORAGE_KEY,
-  LEGACY_STORAGE_KEYS,
   authRedirectUrl,
   hasSupabaseConfig
 } from '../config.js';
@@ -15,7 +13,7 @@ import {
   getAccountContext,
   setAccountContext
 } from '../account-context.js';
-import { claimLegacyLocalData, clearCurrentUserLocalData, localRepository } from '../data/local-repository.js';
+import { clearCurrentUserLocalData } from '../data/local-repository.js';
 import {
   clearActivationUrl,
   completeTeamInvitation,
@@ -380,7 +378,6 @@ async function enterAccount(session, successMessage = '') {
     const context = await ensureAccountWorkspace(session.user);
     setAccountContext(context);
     exposeAccountApi();
-    maybeClaimLegacyData(context.organization.name);
     if (typeof authenticatedHandler === 'function') {
       showLoading('Cloudgegevens laden…');
       await authenticatedHandler(context);
@@ -395,24 +392,6 @@ async function enterAccount(session, successMessage = '') {
   } finally {
     enteringAccount = false;
   }
-}
-
-function maybeClaimLegacyData(companyName) {
-  if (localRepository.hasScopedItem(STORAGE_KEY)) return;
-  const sourceKey = [STORAGE_KEY, ...LEGACY_STORAGE_KEYS].find(
-    key => localRepository.getUnscopedItem(key)
-  );
-  if (!sourceKey) return;
-
-  const claimKey = `${STORAGE_KEY}::legacy_claimed_by`;
-  const claimedBy = localRepository.getUnscopedItem(claimKey);
-  const organizationId = getAccountContext()?.organization?.id;
-  if (claimedBy && claimedBy !== organizationId) return;
-
-  const useExisting = window.confirm(
-    `Er staan bestaande Optero-gegevens in deze browser. Wil je deze koppelen aan het bedrijfsaccount “${companyName}”?`
-  );
-  if (useExisting) claimLegacyLocalData(STORAGE_KEY, LEGACY_STORAGE_KEYS);
 }
 
 function exposeAccountApi() {

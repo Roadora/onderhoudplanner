@@ -2,7 +2,7 @@ import { APP_VERSION, STORAGE_KEY as KEY, LEGACY_STORAGE_KEYS as LEGACY_KEYS } f
 import { localRepository } from './data/local-repository.js';
 import { getAccountContext } from './account-context.js';
 import { listTeamMembers, listPendingInvitations, inviteTeamMember, getAppointmentAssignments, setAppointmentAssignments } from './team/team-service.js';
-import { flushCloudSync } from './data/cloud-repository.js';
+import { flushCloudSync, deleteCloudAppointments, deleteCloudInstallation, deleteCloudCustomer, clearCloudOperationalData } from './data/cloud-repository.js';
 
 const $ = (s) => document.querySelector(s);
 const field = (form, name) => form?.elements?.namedItem(name) || null;
@@ -904,7 +904,7 @@ function editSystem(id){
   app.innerHTML = `<section class="screen"><form class="form" id="editSystemForm">${systemFormFields(s)}<button class="primary" type="submit">Systeem opslaan</button></form></section>`;
   const f=$('#editSystemForm');
   wireSystemForm(f, s.model);
-  f.onsubmit=(e)=>{
+  f.onsubmit=async (e)=>{
     e.preventDefault();
     s.type=field(f,'type').value;
     s.brand=selectedBrand(f);
@@ -920,6 +920,9 @@ function editSystem(id){
     s.reminderCompany=field(f,'reminderCompany').checked;
     s.reminderCustomer=field(f,'reminderCustomer').checked;
     if(s.serviceStatus==='declined'){
+      const appointmentIds=appointments().filter(a=>a.systemId===s.id).map(a=>a.id);
+      try{ await deleteCloudAppointments(appointmentIds); }
+      catch(error){ alert(`De gekoppelde afspraken konden niet veilig uit de cloud worden verwijderd. Er is niets lokaal verwijderd.\n\n${error?.message||'Onbekende fout'}`); return; }
       state.appointments=appointments().filter(a=>a.systemId!==s.id);
       s.contactStatus='completed';
     }
@@ -1148,8 +1151,12 @@ async function newAppointment(){
     nav('agenda');
   };
 }
-function deleteGenericAppointment(id){
+async function deleteGenericAppointment(id){
   if(!confirm('Afspraak verwijderen?')) return;
+  try{ await deleteCloudAppointments([id]); }
+  catch(error){ alert(`Verwijderen is niet gelukt. De afspraak blijft bestaan.
+
+${error?.message||'Onbekende fout'}`); return; }
   state.appointments=appointments().filter(a=>a.id!==id);
   save();
   nav('agenda');
@@ -1208,8 +1215,12 @@ async function planAppointment(systemId){
   };
 }
 
-function deleteAppointment(id, systemId){
+async function deleteAppointment(id, systemId){
   if(!confirm('Afspraak verwijderen?')) return;
+  try{ await deleteCloudAppointments([id]); }
+  catch(error){ alert(`Verwijderen is niet gelukt. De afspraak blijft bestaan.
+
+${error?.message||'Onbekende fout'}`); return; }
   state.appointments = appointments().filter(a=>a.id!==id);
   const s=systemById(systemId);
   if(s && !appointmentForSystem(s.id)) s.contactStatus='contacted';
@@ -1217,12 +1228,15 @@ function deleteAppointment(id, systemId){
   nav('detail',{customerId:s?s.customerId:null,back:'customers'});
 }
 
-function markDone(id){
+async function markDone(id){
   const s=systemById(id);
   if(!s) return;
   const performed=prompt('Op welke datum is het onderhoud uitgevoerd?',todayKey());
   if(performed===null) return;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(performed)){ alert('Vul een geldige datum in als JJJJ-MM-DD.'); return; }
+  const completedAppointmentIds=appointments().filter(a=>a.systemId===id).map(a=>a.id);
+  try{ await deleteCloudAppointments(completedAppointmentIds); }
+  catch(error){ alert(`Onderhoud kan nog niet worden afgerond omdat de gekoppelde afspraak niet veilig uit de cloud kon worden verwijderd.\n\n${error?.message||'Onbekende fout'}`); return; }
   s.lastService=performed;
   s.doneCount=(s.doneCount||0)+1;
   s.contactStatus='not_contacted';
@@ -1233,8 +1247,12 @@ function markDone(id){
   render();
 }
 
-function deleteSystem(id){
+async function deleteSystem(id){
   if(!confirm('Systeem verwijderen?')) return;
+  try{ await deleteCloudInstallation(id); }
+  catch(error){ alert(`Verwijderen is niet gelukt. De installatie blijft bestaan.
+
+${error?.message||'Onbekende fout'}`); return; }
   state.systems=state.systems.filter(s=>s.id!==id);
   state.appointments=appointments().filter(a=>a.systemId!==id);
   save();
@@ -1762,6 +1780,8 @@ async function installApp(){
 async function resetDemo(){
   if(!confirm('Alle klanten, installaties en afspraken uit deze bedrijfsomgeving verwijderen? De bedrijfsnaam en het account blijven bestaan.')) return;
   const account=getAccountContext();
+  try{ await clearCloudOperationalData(); }
+  catch(error){ alert(`Wissen is gestopt omdat de cloudopslag niet veilig kon worden bijgewerkt. Er is lokaal niets verwijderd.\n\n${error?.message||'Onbekende fout'}`); return; }
   localRepository.removeItem(KEY);
   state = normalizeState({
     ...structuredClone(demoState),
@@ -1773,19 +1793,17 @@ async function resetDemo(){
     }
   });
   save();
-  try{
-    await window.maintenanceCloud?.flush?.();
-    alert('Alle klanten, installaties en afspraken zijn uit de cloud verwijderd.');
-  }catch(error){
-    console.error('Cloudgegevens wissen nog niet gesynchroniseerd',error);
-    alert('De gegevens zijn op dit apparaat gewist, maar de cloud kon nog niet worden bijgewerkt. Laat de app open en controleer de cloudstatus.');
-  }
+  alert('Alle klanten, installaties en afspraken zijn veilig uit de cloud verwijderd.');
   nav('dashboard');
 }
 
 
-function deleteCustomer(id){
+async function deleteCustomer(id){
   if(!confirm('Klant verwijderen? Alle gekoppelde systemen en afspraken worden ook verwijderd.')) return;
+  try{ await deleteCloudCustomer(id); }
+  catch(error){ alert(`Verwijderen is niet gelukt. De klant en gekoppelde gegevens blijven bestaan.
+
+${error?.message||'Onbekende fout'}`); return; }
   const systemIds = state.systems.filter(s=>s.customerId===id).map(s=>s.id);
   state.systems = state.systems.filter(s=>s.customerId!==id);
   state.appointments = appointments().filter(a=>a.customerId!==id && !systemIds.includes(a.systemId));
@@ -1807,5 +1825,8 @@ Object.assign(window,exposedApi);
 if(notifyBtn) notifyBtn.onclick=()=>nav('notifications');
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPrompt=e;});
 window.addEventListener('appinstalled',()=>{deferredInstallPrompt=null;});
+window.addEventListener('optero-technician-data-updated',()=>{
+  if(currentRole==='technician'){ state=load(); render(); }
+});
 render();
 if(currentRole !== 'technician') setTimeout(checkDueNotification,800);

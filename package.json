@@ -1,13 +1,13 @@
 {
   "name": "optero",
   "private": true,
-  "version": "0.9.9",
+  "version": "0.10.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/cloud-mapper.test.mjs && node tests/team-onboarding.test.mjs && node tests/role-hardening.test.mjs && node tests/work-assignment-isolation.test.mjs"
+    "test": "node tests/cloud-mapper.test.mjs && node tests/team-onboarding.test.mjs && node tests/role-hardening.test.mjs && node tests/work-assignment-isolation.test.mjs && node tests/transactional-cloud-v100.test.mjs"
   },
   "devDependencies": {
     "vite": "8.1.4"

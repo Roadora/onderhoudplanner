@@ -1,7 +1,7 @@
 import { STORAGE_KEY } from '../config.js';
 import { getAccountContext, getOrganizationId } from '../account-context.js';
 import { getSupabaseClient } from '../lib/supabase.js';
-import { localRepository, observeLocalWrites, migrateOrganizationCacheToCurrentUser } from './local-repository.js';
+import { localRepository, observeLocalWrites } from './local-repository.js';
 
 const DEFAULT_WHATSAPP = 'Hallo {naam}, volgens onze planning is het weer tijd voor onderhoud aan uw {systeem}. Zullen we een afspraak inplannen? Groet, {bedrijf}';
 const SYNC_DELAY_MS = 650;
@@ -16,6 +16,8 @@ let lastSyncError = null;
 let checkingRemote = false;
 let lastStatus = { state: 'loading', label: 'Cloud laden…' };
 let removeWriteObserver = null;
+let technicianRefreshBound = false;
+let technicianRefreshTimer = null;
 
 function emitStatus(state, label, detail = '') {
   lastStatus = { state, label, detail, at: new Date().toISOString() };
@@ -244,8 +246,8 @@ function cloudRowsToState(settings, customers, installations, appointments) {
 
 function enhanceCloudError(error) {
   const message = String(error?.message || 'Onbekende cloudfout');
-  if (/relation .* does not exist|schema cache|get_organization_state|replace_organization_state/i.test(message)) {
-    const setupError = new Error('De cloudtabellen ontbreken nog. Voer supabase/cloud_schema_v082.sql volledig uit in de Supabase SQL Editor.');
+  if (/relation .* does not exist|schema cache|get_organization_state|merge_organization_state_v100|delete_appointments_v100|delete_installation_v100|delete_customer_v100/i.test(message)) {
+    const setupError = new Error('De veilige cloudfuncties ontbreken nog. Voer eerst supabase/transactional_cloud_v100.sql volledig uit in de Supabase SQL Editor.');
     setupError.code = 'CLOUD_SCHEMA_MISSING';
     setupError.cause = error;
     return setupError;
@@ -277,13 +279,13 @@ async function fetchCloudState() {
   };
 }
 
-async function replaceCloudState(rawState, { migratedFromLocal = false } = {}) {
+async function mergeCloudState(rawState, { migratedFromLocal = false } = {}) {
   const supabase = getSupabaseClient();
   const organizationId = getOrganizationId();
   if (!supabase || !organizationId) throw new Error('Bedrijfsomgeving ontbreekt.');
 
   const payload = stateToPayload(rawState);
-  const { data, error } = await supabase.rpc('replace_organization_state', {
+  const { data, error } = await supabase.rpc('merge_organization_state_v100', {
     p_organization_id: organizationId,
     p_expected_revision: cloudRevision,
     p_state: payload,
@@ -332,7 +334,7 @@ async function runSyncLoop() {
       }
       emitStatus('syncing', 'Opslaan…', 'Wijzigingen worden naar Supabase gestuurd.');
       try {
-        await replaceCloudState(state);
+        await mergeCloudState(state);
         lastSyncError = null;
         localRepository.removeItem(`${STORAGE_KEY}_pending_cloud`, { silent: true });
         emitStatus('saved', 'Opgeslagen', `Cloudrevisie ${cloudRevision}`);
@@ -447,43 +449,63 @@ async function refreshFromCloudWhenNewer() {
   }
 }
 
+async function runRevisionMutation(functionName, args = {}) {
+  await flushCloudSync();
+  const supabase = getSupabaseClient();
+  const organizationId = getOrganizationId();
+  if (!supabase || !organizationId) throw new Error('Bedrijfsomgeving ontbreekt.');
+  const { data, error } = await supabase.rpc(functionName, {
+    p_organization_id: organizationId,
+    p_expected_revision: cloudRevision,
+    ...args
+  });
+  if (error) {
+    if (String(error?.message || '').includes('CLOUD_REVISION_CONFLICT') || String(error?.code || '') === '40001') {
+      await resolveConflict(localRepository.getItem(STORAGE_KEY) || '{}', error);
+    }
+    throw enhanceCloudError(error);
+  }
+  cloudRevision = numberValue(data, cloudRevision + 1);
+  emitStatus('saved', 'Opgeslagen', `Cloudrevisie ${cloudRevision}`);
+  return cloudRevision;
+}
+
+export async function deleteCloudAppointments(ids = []) {
+  const cleanIds = [...new Set((ids || []).map(String).filter(Boolean))];
+  if (!cleanIds.length) return cloudRevision;
+  return runRevisionMutation('delete_appointments_v100', { p_ids: cleanIds });
+}
+
+export async function deleteCloudInstallation(id) {
+  if (!id) return cloudRevision;
+  return runRevisionMutation('delete_installation_v100', { p_id: String(id) });
+}
+
+export async function deleteCloudCustomer(id) {
+  if (!id) return cloudRevision;
+  return runRevisionMutation('delete_customer_v100', { p_id: String(id) });
+}
+
+export async function clearCloudOperationalData() {
+  return runRevisionMutation('clear_operational_data_v100');
+}
+
 export async function bootstrapCloudData() {
   emitStatus('loading', 'Cloud laden…', 'Bedrijfsgegevens worden opgehaald.');
-  migrateOrganizationCacheToCurrentUser(STORAGE_KEY);
-
   const cloud = await fetchCloudState();
   cloudRevision = cloud.revision;
   const pendingRecoveryRaw = localRepository.getItem(`${STORAGE_KEY}_pending_cloud`);
-  const localRaw = pendingRecoveryRaw || localRepository.getItem(STORAGE_KEY);
-  const localState = normalizeLocalState(safeJson(localRaw));
-  const localHasRecords = hasMeaningfulLocalData(localState);
-  const cloudHasNoRecords = !cloud.hasRecords;
-  const localMigrationStillOpen = !cloud.migratedFromLocalAt;
 
   let activeState;
   if (pendingRecoveryRaw) {
-    // Dit is geen oude import maar een wijziging die tijdens het sluiten nog
-    // niet bevestigd was. Toon die versie direct en probeer hem opnieuw.
-    activeState = localState;
-  } else if (cloudHasNoRecords && localHasRecords && localMigrationStillOpen) {
-    saveLocalBackup(localRaw, `pre_cloud_backup_${Date.now()}`);
-    const totals = `${localState.customers.length} klanten, ${localState.systems.length} installaties en ${localState.appointments.length} afspraken`;
-    const migrate = window.confirm(`Cloudopslag is gereed. Wil je ${totals} uit deze browser nu veilig naar je bedrijfsaccount overzetten?`);
-    if (migrate) {
-      await replaceCloudState(localState, { migratedFromLocal: true });
-      activeState = localState;
-      window.alert('De bestaande gegevens zijn succesvol naar je beveiligde bedrijfsomgeving overgezet.');
-    } else {
-      activeState = createEmptyState();
-      // Markeer de migratiekeuze ook bij afwijzen, zodat een oude lokale kopie
-      // niet bij iedere volgende login opnieuw wordt aangeboden.
-      await replaceCloudState(activeState, { migratedFromLocal: true });
-      window.alert('De cloudomgeving is leeg gestart. De oude lokale gegevens zijn als browserback-up bewaard.');
-    }
+    // Alleen een expliciet onbevestigde wijziging van déze gebruiker mag tijdelijk
+    // voorrang krijgen. Oude ongescope browserdata wordt nooit automatisch gekoppeld.
+    activeState = normalizeLocalState(safeJson(pendingRecoveryRaw));
   } else if (!cloud.hasSettings) {
-    activeState = localRaw ? localState : createEmptyState();
-    await replaceCloudState(activeState, { migratedFromLocal: Boolean(localRaw) });
+    activeState = createEmptyState();
+    await mergeCloudState(activeState, { migratedFromLocal: true });
   } else {
+    // Supabase is de enige bron van waarheid bij een normale login.
     activeState = cloud.state;
   }
 
@@ -534,46 +556,67 @@ export async function bootstrapCloudData() {
 
 
 
-export async function bootstrapTechnicianData() {
+async function fetchTechnicianState() {
   const supabase = getSupabaseClient();
   const account = getAccountContext();
   const organizationId = getOrganizationId();
   if (!supabase || !organizationId || account?.membership?.role !== 'technician') {
     throw new Error('Monteursomgeving ontbreekt.');
   }
-
-  emitStatus('loading', 'Mijn werk laden…', 'Alleen jouw toegewezen werkzaamheden worden opgehaald.');
   const today = new Date();
-  // De monteurskalender heeft voldoende historie en vooruitblik nodig om als echte agenda te werken.
   const fromDate = new Date(today);
   fromDate.setDate(fromDate.getDate() - 31);
-  const from = fromDate.toISOString().slice(0, 10);
   const untilDate = new Date(today);
   untilDate.setDate(untilDate.getDate() + 365);
-  const until = untilDate.toISOString().slice(0, 10);
   const { data, error } = await supabase.rpc('get_my_assigned_work', {
     p_organization_id: organizationId,
-    p_from: from,
-    p_until: until
+    p_from: fromDate.toISOString().slice(0, 10),
+    p_until: untilDate.toISOString().slice(0, 10)
   });
   if (error) throw enhanceCloudError(error);
-
   const payload = data || {};
-  const activeState = cloudRowsToState(
-    null,
-    payload.customers || [],
-    payload.installations || [],
-    payload.appointments || []
-  );
+  const activeState = cloudRowsToState(null, payload.customers || [], payload.installations || [], payload.appointments || []);
   activeState.company = account?.organization?.name || 'Optero';
   activeState.settings.companyName = activeState.company;
   activeState.settings.contactName = account?.profile?.full_name || '';
+  return activeState;
+}
+
+async function refreshTechnicianWork({ notify = true } = {}) {
+  if (document.visibilityState === 'hidden' || !navigator.onLine) return;
+  try {
+    const nextState = await fetchTechnicianState();
+    const previousRaw = localRepository.getItem(STORAGE_KEY) || '';
+    const nextRaw = JSON.stringify(nextState);
+    if (previousRaw !== nextRaw) {
+      localRepository.setItem(STORAGE_KEY, nextRaw, { silent: true });
+      if (notify) window.dispatchEvent(new CustomEvent('optero-technician-data-updated'));
+    }
+    emitStatus('saved', 'Planning actueel', `${nextState.appointments.length} toegewezen opdracht(en)`);
+  } catch (error) {
+    console.warn('Monteursplanning verversen mislukt', error);
+    emitStatus('error', 'Verversen mislukt', error?.message || 'Planning kon niet worden bijgewerkt.');
+  }
+}
+
+export async function bootstrapTechnicianData() {
+  emitStatus('loading', 'Mijn planning laden…', 'Alleen jouw toegewezen werkzaamheden worden opgehaald.');
+  const activeState = await fetchTechnicianState();
   localRepository.setItem(STORAGE_KEY, JSON.stringify(activeState), { silent: true });
   cloudReady = false;
   removeWriteObserver?.();
   removeWriteObserver = null;
-  emitStatus('saved', 'Mijn werk geladen', `${activeState.appointments.length} toegewezen opdracht(en)`);
+  emitStatus('saved', 'Planning actueel', `${activeState.appointments.length} toegewezen opdracht(en)`);
   updateStatusElement();
+
+  if (!technicianRefreshBound) {
+    technicianRefreshBound = true;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refreshTechnicianWork();
+    });
+    window.addEventListener('online', () => refreshTechnicianWork());
+    technicianRefreshTimer = window.setInterval(() => refreshTechnicianWork(), 60000);
+  }
   return activeState;
 }
 

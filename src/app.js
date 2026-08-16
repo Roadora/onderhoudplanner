@@ -1021,12 +1021,22 @@ function selectedAssignmentUserIds(form){
 }
 
 async function persistAssignments(appointmentId, form){
+  // Eerst moet de afspraak aantoonbaar in Supabase staan. Pas daarna mag de
+  // medewerkerstoewijzing worden geschreven, omdat die via een foreign key/RPC
+  // naar de cloudafspraak verwijst. Fouten worden bewust doorgegeven: de UI mag
+  // nooit doen alsof een opdracht is opgeslagen wanneer de cloudwrite faalde.
+  await flushCloudSync();
+  await setAppointmentAssignments(appointmentId, selectedAssignmentUserIds(form));
+}
+
+async function persistAppointmentForm(appointmentId, form){
   try{
-    await flushCloudSync();
-    await setAppointmentAssignments(appointmentId, selectedAssignmentUserIds(form));
+    await persistAssignments(appointmentId, form);
+    return true;
   }catch(error){
-    console.error('Werktoewijzing opslaan mislukt', error);
-    alert(`De afspraak is opgeslagen, maar de medewerkerstoewijzing niet: ${error?.message || 'onbekende fout'}`);
+    console.error('Afspraak of werktoewijzing opslaan mislukt', error);
+    alert(`Opslaan naar de cloud is niet gelukt. De afspraak blijft op dit apparaat bewaard en wordt niet verwijderd. Probeer opnieuw voordat je uitlogt.\n\n${error?.message || 'Onbekende fout'}`);
+    return false;
   }
 }
 
@@ -1132,7 +1142,7 @@ async function newAppointment(){
       savedAppointmentId=created.id;
     }
     save();
-    await persistAssignments(savedAppointmentId, f);
+    if(!(await persistAppointmentForm(savedAppointmentId, f))) return;
     selectedAgendaDate=field(f,'date').value;
     calendarMonth=new Date(field(f,'date').value+'T12:00:00');
     nav('agenda');
@@ -1191,7 +1201,7 @@ async function planAppointment(systemId){
     }
     s.contactStatus='scheduled';
     save();
-    await persistAssignments(savedAppointmentId, f);
+    if(!(await persistAppointmentForm(savedAppointmentId, f))) return;
     selectedAgendaDate=field(f,'date').value;
     calendarMonth=new Date(field(f,'date').value+'T12:00:00');
     nav('agenda');

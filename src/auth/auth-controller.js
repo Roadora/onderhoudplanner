@@ -425,9 +425,14 @@ function exposeAccountApi() {
 async function signOut() {
   const supabase = getSupabaseClient();
   try {
+    // Een eigenaar/planner mag nooit uitloggen zolang er nog een onbevestigde
+    // cloudwijziging staat. Anders zou clearCurrentUserLocalData de enige kopie
+    // van een zojuist gemaakte afspraak kunnen verwijderen.
     await window.maintenanceCloud?.flush?.();
   } catch (error) {
-    console.warn('Laatste cloudsynchronisatie voor uitloggen mislukt', error);
+    console.error('Uitloggen geblokkeerd: cloudsynchronisatie mislukt', error);
+    window.alert(`Uitloggen is gestopt omdat niet alle wijzigingen veilig in de cloud staan. Je gegevens blijven op dit apparaat bewaard. Controleer je internetverbinding en probeer opnieuw.\n\n${error?.message || 'Cloudopslag mislukt.'}`);
+    return;
   }
   clearCurrentUserLocalData();
   activeUserId = '';

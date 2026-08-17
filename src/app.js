@@ -1256,10 +1256,47 @@ function surveySelect(name,label,value,options){
 function surveyOptionSelect(name,label,value,options){
   return surveySelect(name,label,value,options.map(v=>[v,v]));
 }
-function surveyInstallUnitCount(systemType){
-  if(systemType==='multi_split') return 2;
+function surveyInstallUnitCount(systemType,requestedCount){
+  if(systemType==='single_split') return 1;
   if(systemType==='triple_split') return 3;
+  if(systemType==='multi_split'){
+    const n=Number(requestedCount||2);
+    return Math.min(5,Math.max(2,Number.isFinite(n)?n:2));
+  }
   return 1;
+}
+function surveySystemCount(details={}){
+  const n=Number(details.systemCount || (Array.isArray(details.systems)?details.systems.length:1) || 1);
+  return Math.min(6,Math.max(1,Number.isFinite(n)?n:1));
+}
+function legacySurveySystem(details={}){
+  const systemType=details.systemType || 'single_split';
+  return {
+    systemType,
+    unitCount:surveyInstallUnitCount(systemType,details.unitCount),
+    brandPreference:details.brandPreference || 'Daikin',
+    modelPreference:details.modelPreference || '',
+    brandOther:details.brandOther || '',
+    modelOther:details.modelOther || '',
+    units:Array.isArray(details.units)?details.units:[]
+  };
+}
+function normalizedSurveySystems(details={},count=1){
+  const saved=Array.isArray(details.systems) && details.systems.length ? details.systems : [legacySurveySystem(details)];
+  return Array.from({length:count},(_,i)=>{
+    const src=saved[i] || {};
+    const systemType=src.systemType || 'single_split';
+    const unitCount=surveyInstallUnitCount(systemType,src.unitCount);
+    return {
+      systemType,
+      unitCount,
+      brandPreference:src.brandPreference || 'Daikin',
+      modelPreference:src.modelPreference || '',
+      brandOther:src.brandOther || '',
+      modelOther:src.modelOther || '',
+      units:normalizedSurveyInstallUnits(src,unitCount)
+    };
+  });
 }
 function normalizedSurveyInstallUnits(details={},count=1){
   const saved=Array.isArray(details.units)?details.units:[];
@@ -1268,7 +1305,7 @@ function normalizedSurveyInstallUnits(details={},count=1){
     capacityKw:saved[i]?.capacityKw || ''
   }));
 }
-function surveyBrandModelFields(details={}){
+function surveyBrandModelFields(details={},prefix=''){
   const brand=details.brandPreference || 'Daikin';
   const brandKnown=BRAND_OPTIONS.includes(brand);
   const selectedBrand=brandKnown?brand:'Anders...';
@@ -1276,47 +1313,59 @@ function surveyBrandModelFields(details={}){
   const model=details.modelPreference || '';
   const modelKnown=modelList.includes(model);
   return `<div class="form-grid-2">
-    ${surveySelect('brandPreference','Merk',selectedBrand,BRAND_OPTIONS.map(v=>[v,v]))}
-    ${surveySelect('modelPreference','Model / serie',modelKnown?model:'Anders...',modelList.map(v=>[v,v]))}
+    ${surveySelect(`${prefix}brandPreference`,'Merk',selectedBrand,BRAND_OPTIONS.map(v=>[v,v]))}
+    ${surveySelect(`${prefix}modelPreference`,'Model / serie',modelKnown?model:'Anders...',modelList.map(v=>[v,v]))}
   </div>
   <div class="form-grid-2">
-    <div class="field survey-brand-other ${selectedBrand==='Anders...'?'show':''}"><label>Ander merk</label><input name="brandOther" value="${esc(details.brandOther || (!brandKnown?brand:''))}" placeholder="Vul merk in"></div>
-    <div class="field survey-model-other ${(model==='Anders...' || (!modelKnown && model))?'show':''}"><label>Ander model</label><input name="modelOther" value="${esc(details.modelOther || (!modelKnown?model:''))}" placeholder="Vul model in"></div>
+    <div class="field survey-brand-other ${selectedBrand==='Anders...'?'show':''}"><label>Ander merk</label><input name="${prefix}brandOther" value="${esc(details.brandOther || (!brandKnown?brand:''))}" placeholder="Vul merk in"></div>
+    <div class="field survey-model-other ${(model==='Anders...' || (!modelKnown && model))?'show':''}"><label>Ander model</label><input name="${prefix}modelOther" value="${esc(details.modelOther || (!modelKnown?model:''))}" placeholder="Vul model in"></div>
   </div>`;
 }
-function surveyInstallUnitCard(unit,index){
+function surveyInstallUnitCard(unit,index,prefix=''){
   const room=unit.room || 'Woonkamer';
   const roomKnown=SURVEY_ROOM_OPTIONS.includes(room);
   const capacity=String(unit.capacityKw || '2.5');
   const capacityKnown=SURVEY_CAPACITY_OPTIONS.includes(capacity);
+  const n=index+1;
   return `<div class="survey-unit-card">
-    <div class="survey-unit-title"><b>Binnenunit ${index+1}</b><span>Ruimte en vermogen</span></div>
+    <div class="survey-unit-title"><b>Binnenunit ${n}</b><span>Ruimte en vermogen</span></div>
     <div class="form-grid-2">
-      ${surveyOptionSelect(`unitRoom${index+1}`,'Ruimte',roomKnown?room:'Anders...',SURVEY_ROOM_OPTIONS)}
-      ${surveySelect(`unitCapacity${index+1}`,'Vermogen',capacityKnown?capacity:'Anders...',SURVEY_CAPACITY_OPTIONS.map(v=>[v,v==='Anders...'?'Anders...':`${v} kW`]))}
+      ${surveyOptionSelect(`${prefix}unitRoom${n}`,'Ruimte',roomKnown?room:'Anders...',SURVEY_ROOM_OPTIONS)}
+      ${surveySelect(`${prefix}unitCapacity${n}`,'Vermogen',capacityKnown?capacity:'Anders...',SURVEY_CAPACITY_OPTIONS.map(v=>[v,v==='Anders...'?'Anders...':`${v} kW`]))}
     </div>
     <div class="form-grid-2">
-      <div class="field survey-room-other ${room==='Anders...' || !roomKnown?'show':''}"><label>Andere ruimte</label><input name="unitRoomOther${index+1}" value="${esc(!roomKnown?room:'')}" placeholder="Bijv. hobbykamer"></div>
-      <div class="field survey-capacity-other ${capacity==='Anders...' || !capacityKnown?'show':''}"><label>Ander vermogen (kW)</label><input name="unitCapacityOther${index+1}" type="number" min="0" step="0.1" value="${esc(!capacityKnown?capacity:'')}" placeholder="Bijv. 3.0"></div>
+      <div class="field survey-room-other ${room==='Anders...' || !roomKnown?'show':''}"><label>Andere ruimte</label><input name="${prefix}unitRoomOther${n}" value="${esc(!roomKnown?room:'')}" placeholder="Bijv. hobbykamer"></div>
+      <div class="field survey-capacity-other ${capacity==='Anders...' || !capacityKnown?'show':''}"><label>Ander vermogen (kW)</label><input name="${prefix}unitCapacityOther${n}" type="number" min="0" step="0.1" value="${esc(!capacityKnown?capacity:'')}" placeholder="Bijv. 3.0"></div>
     </div>
+  </div>`;
+}
+function surveySystemCard(system,index){
+  const number=index+1;
+  const prefix=`system${number}`;
+  const type=system.systemType || 'single_split';
+  const unitCount=surveyInstallUnitCount(type,system.unitCount);
+  const units=normalizedSurveyInstallUnits(system,unitCount);
+  return `<div class="survey-system-card" data-survey-system="${number}">
+    <div class="survey-system-title"><div><span>SYSTEEM ${number}</span><b>${detailValueLabel('systemType',type)}</b></div><span>${unitCount} binnenunit${unitCount===1?'':'s'}</span></div>
+    ${surveySelect(`${prefix}Type`,'Type systeem',type,[['single_split','Single split · 1 binnenunit'],['multi_split','Multi split · 2–5 binnenunits'],['triple_split','Triple split · 3 binnenunits'],['warmtepomp','Warmtepomp'],['anders','Anders']])}
+    ${type==='multi_split'?surveySelect(`${prefix}UnitCount`,'Aantal binnenunits',String(unitCount),[['2','2 binnenunits'],['3','3 binnenunits'],['4','4 binnenunits'],['5','5 binnenunits']]):`<input type="hidden" name="${prefix}UnitCount" value="${unitCount}">`}
+    ${surveyBrandModelFields(system,prefix)}
+    <div class="survey-units-grid">${units.map((u,i)=>surveyInstallUnitCard(u,i,prefix)).join('')}</div>
   </div>`;
 }
 function dynamicSurveyFields(purpose,details={}){
   if(purpose==='nieuwe_installatie'){
-    const systemType=details.systemType || 'single_split';
-    const unitCount=surveyInstallUnitCount(systemType);
-    const units=normalizedSurveyInstallUnits(details,unitCount);
+    const systemCount=surveySystemCount(details);
+    const systems=normalizedSurveySystems(details,systemCount);
     return `
-      <div class="survey-section-head"><b>Gewenste installatie</b><span>Kies wat nodig is; Optero vult het aantal binnenunits automatisch in.</span></div>
-      ${surveySelect('systemType','Type systeem',systemType,[['single_split','Single split · 1 binnenunit'],['multi_split','Multi split · 2 binnenunits'],['triple_split','Triple split · 3 binnenunits'],['warmtepomp','Warmtepomp'],['anders','Anders']])}
-      <div class="survey-auto-units"><span>Aantal binnenunits</span><b>${unitCount}</b><input type="hidden" name="unitCount" value="${unitCount}"></div>
-      ${surveyBrandModelFields(details)}
-      <div class="survey-units-grid">${units.map((u,i)=>surveyInstallUnitCard(u,i)).join('')}</div>
+      <div class="survey-section-head"><b>Gewenste installatie</b><span>Leg per compleet systeem vast wat de klant nodig heeft.</span></div>
+      ${surveySelect('systemCount','Aantal complete systemen',String(systemCount),[['1','1 systeem'],['2','2 systemen'],['3','3 systemen'],['4','4 systemen'],['5','5 systemen'],['6','6 systemen']])}
+      <div class="survey-systems-grid">${systems.map((system,i)=>surveySystemCard(system,i)).join('')}</div>
       ${surveyField('installationNotes','Wensen / bijzonderheden',details.installationNotes||details.capacityNotes||'','Bijv. stille uitvoering, kleurwens of plaatsingsvoorkeur','textarea')}
-      <div class="survey-section-head"><b>Montagesituatie</b><span>Voorbereiding voor de uiteindelijke installatie.</span></div>
+      <div class="survey-section-head"><b>Montagesituatie</b><span>Algemene voorbereiding voor de uiteindelijke installatie.</span></div>
       ${surveyField('indoorLocation','Gewenste plek binnenunit(s)',details.indoorLocation||'','Bijv. boven deur, vrije wand slaapkamer','textarea')}
-      ${surveyField('outdoorLocation','Gewenste plek buitenunit',details.outdoorLocation||'','Plat dak, gevel, balkon…','textarea')}
-      <div class="form-grid-2">${surveyField('estimatedLineLengthM','Geschatte leidinglengte (m)',details.estimatedLineLengthM||'','Bijv. 8','number')}${surveyField('heightAccess','Hoogte / bereikbaarheid',details.heightAccess||'','Begane grond, steiger nodig…')}</div>
+      ${surveyField('outdoorLocation','Gewenste plek buitenunit(s)',details.outdoorLocation||'','Plat dak, gevel, balkon…','textarea')}
+      <div class="form-grid-2">${surveyField('estimatedLineLengthM','Geschatte totale leidinglengte (m)',details.estimatedLineLengthM||'','Bijv. 18','number')}${surveyField('heightAccess','Hoogte / bereikbaarheid',details.heightAccess||'','Begane grond, steiger nodig…')}</div>
       <div class="form-grid-2">${ynSelect('electricalPresent','Geschikte elektra aanwezig?',details.electricalPresent||'unknown')}${ynSelect('condensatePossible','Condensafvoer mogelijk?',details.condensatePossible||'unknown')}</div>
       ${surveyField('installationMaterials','Benodigde materialen / voorbereiding',details.installationMaterials||'','Dakdoorvoer, pomp, goot, beugels…','textarea')}`;
   }
@@ -1360,23 +1409,29 @@ function dynamicSurveyFields(purpose,details={}){
 }
 function collectDynamicSurveyDetails(form,purpose){
   if(purpose==='nieuwe_installatie'){
-    const systemType=field(form,'systemType')?.value || 'single_split';
-    const count=surveyInstallUnitCount(systemType);
-    const brandChoice=field(form,'brandPreference')?.value || 'Daikin';
-    const modelChoice=field(form,'modelPreference')?.value || '';
-    const brand=brandChoice==='Anders...' ? (field(form,'brandOther')?.value.trim() || 'Anders') : brandChoice;
-    const model=modelChoice==='Anders...' ? (field(form,'modelOther')?.value.trim() || 'Anders') : modelChoice;
-    const units=Array.from({length:count},(_,i)=>{
+    const count=Math.min(6,Math.max(1,Number(field(form,'systemCount')?.value||1)));
+    const systems=Array.from({length:count},(_,i)=>{
       const n=i+1;
-      const roomChoice=field(form,`unitRoom${n}`)?.value || '';
-      const capacityChoice=field(form,`unitCapacity${n}`)?.value || '';
-      return {
-        room:roomChoice==='Anders...' ? (field(form,`unitRoomOther${n}`)?.value.trim() || 'Anders') : roomChoice,
-        capacityKw:capacityChoice==='Anders...' ? (field(form,`unitCapacityOther${n}`)?.value.trim() || 'Anders') : capacityChoice
-      };
+      const prefix=`system${n}`;
+      const systemType=field(form,`${prefix}Type`)?.value || 'single_split';
+      const unitCount=surveyInstallUnitCount(systemType,field(form,`${prefix}UnitCount`)?.value);
+      const brandChoice=field(form,`${prefix}brandPreference`)?.value || 'Daikin';
+      const modelChoice=field(form,`${prefix}modelPreference`)?.value || '';
+      const brand=brandChoice==='Anders...' ? (field(form,`${prefix}brandOther`)?.value.trim() || 'Anders') : brandChoice;
+      const model=modelChoice==='Anders...' ? (field(form,`${prefix}modelOther`)?.value.trim() || 'Anders') : modelChoice;
+      const units=Array.from({length:unitCount},(_,unitIndex)=>{
+        const u=unitIndex+1;
+        const roomChoice=field(form,`${prefix}unitRoom${u}`)?.value || '';
+        const capacityChoice=field(form,`${prefix}unitCapacity${u}`)?.value || '';
+        return {
+          room:roomChoice==='Anders...' ? (field(form,`${prefix}unitRoomOther${u}`)?.value.trim() || 'Anders') : roomChoice,
+          capacityKw:capacityChoice==='Anders...' ? (field(form,`${prefix}unitCapacityOther${u}`)?.value.trim() || 'Anders') : capacityChoice
+        };
+      });
+      return {systemType,unitCount,brandPreference:brand,modelPreference:model,units};
     });
     return {
-      systemType, unitCount:count, brandPreference:brand, modelPreference:model, units,
+      systemCount:count, systems,
       installationNotes:field(form,'installationNotes')?.value.trim() || '',
       indoorLocation:field(form,'indoorLocation')?.value.trim() || '',
       outdoorLocation:field(form,'outdoorLocation')?.value.trim() || '',
@@ -1405,16 +1460,20 @@ function detailValueLabel(key,value){
 }
 function renderSurveyDetails(purpose,details={}){
   if(purpose==='nieuwe_installatie'){
-    const type=detailValueLabel('systemType',details.systemType||'single_split');
-    const units=Array.isArray(details.units)?details.units:[];
-    const main=[
-      ['Type systeem',type],['Aantal binnenunits',details.unitCount||surveyInstallUnitCount(details.systemType)],
-      ['Merk',details.brandPreference],['Model / serie',details.modelPreference]
-    ].filter(([,v])=>String(v??'').trim()!=='').map(([l,v])=>`<div class="survey-detail-row"><span>${esc(l)}</span><b>${esc(String(v))}</b></div>`).join('');
-    const unitRows=units.map((u,i)=>`<div class="survey-detail-row"><span>Binnenunit ${i+1}</span><b>${esc(u.room||'-')} · ${esc(u.capacityKw||'-')}${u.capacityKw && u.capacityKw!=='Anders'?' kW':''}</b></div>`).join('');
-    const extraLabels={installationNotes:'Wensen / bijzonderheden',indoorLocation:'Plek binnenunit(s)',outdoorLocation:'Plek buitenunit',estimatedLineLengthM:'Geschatte leidinglengte (m)',heightAccess:'Hoogte / bereikbaarheid',electricalPresent:'Elektra aanwezig / geschikt',condensatePossible:'Condensafvoer mogelijk',installationMaterials:'Materialen / voorbereiding'};
+    const count=surveySystemCount(details);
+    const systems=normalizedSurveySystems(details,count);
+    const systemBlocks=systems.map((system,i)=>{
+      const units=normalizedSurveyInstallUnits(system,surveyInstallUnitCount(system.systemType,system.unitCount));
+      const rows=[
+        ['Type',detailValueLabel('systemType',system.systemType)],
+        ['Merk',system.brandPreference],['Model / serie',system.modelPreference],['Binnenunits',system.unitCount]
+      ].filter(([,v])=>String(v??'').trim()!=='').map(([l,v])=>`<div class="survey-detail-row"><span>${esc(l)}</span><b>${esc(String(v))}</b></div>`).join('');
+      const unitRows=units.map((u,unitIndex)=>`<div class="survey-detail-row"><span>Binnenunit ${unitIndex+1}</span><b>${esc(u.room||'-')} · ${esc(u.capacityKw||'-')}${u.capacityKw && u.capacityKw!=='Anders'?' kW':''}</b></div>`).join('');
+      return `<div class="survey-detail-system"><div class="survey-detail-system-title"><b>Systeem ${i+1}</b><span>${esc(detailValueLabel('systemType',system.systemType))}</span></div><div class="survey-detail-list">${rows}${unitRows}</div></div>`;
+    }).join('');
+    const extraLabels={installationNotes:'Wensen / bijzonderheden',indoorLocation:'Plek binnenunit(s)',outdoorLocation:'Plek buitenunit(s)',estimatedLineLengthM:'Geschatte totale leidinglengte (m)',heightAccess:'Hoogte / bereikbaarheid',electricalPresent:'Elektra aanwezig / geschikt',condensatePossible:'Condensafvoer mogelijk',installationMaterials:'Materialen / voorbereiding'};
     const extras=Object.entries(extraLabels).filter(([k])=>String(details[k]??'').trim()!=='').map(([k,l])=>`<div class="survey-detail-row"><span>${esc(l)}</span><b>${esc(detailValueLabel(k,String(details[k])))}</b></div>`).join('');
-    return `<div class="survey-detail-list">${main}${unitRows}${extras}</div>`;
+    return `<div class="survey-detail-summary"><div class="survey-detail-count"><span>Aantal complete systemen</span><b>${count}</b></div>${systemBlocks}${extras?`<div class="survey-detail-list">${extras}</div>`:''}</div>`;
   }
   const labels={systemType:'Type systeem',indoorUnits:'Aantal binnenunits',brandPreference:'Merkvoorkeur',rooms:'Ruimtes / zones',capacityNotes:'Vermogen / bijzonderheden',indoorLocation:'Plek binnenunit(s)',outdoorLocation:'Plek buitenunit',estimatedLineLengthM:'Geschatte leidinglengte (m)',heightAccess:'Hoogte / bereikbaarheid',electricalPresent:'Elektra aanwezig / geschikt',condensatePossible:'Condensafvoer mogelijk',installationMaterials:'Materialen / voorbereiding',existingBrand:'Bestaand merk',existingModel:'Bestaand model',existingRefrigerant:'Koudemiddel',existingAge:'Leeftijd / bouwjaar',replacementReason:'Reden vervanging',desiredSystemType:'Gewenst type',desiredUnits:'Aantal binnenunits',reusePipework:'Leidingwerk hergebruiken',replacementNotes:'Aanpassingen / bijzonderheden',existingBrandModel:'Bestaand merk / model',additionalUnits:'Extra binnenunits',newRooms:'Nieuwe ruimtes',compatibilityNotes:'Compatibiliteit',customerComplaint:'Klacht klant',sinceWhen:'Sinds wanneer',errorCode:'Foutcode',stillWorking:'Werkt wel / niet',measurements:'Metingen',suspectedCause:'Vermoedelijke oorzaak',partsNeeded:'Onderdelen / materialen',followUp:'Vervolgactie',systemCondition:'Staat installatie',maintenanceNeeded:'Benodigd onderhoud',anomalies:'Aandachtspunten',customSituation:'Situatie / vraag',customRequirements:'Benodigdheden / vervolg'};
   const rows=Object.entries(details||{}).filter(([,v])=>String(v??'').trim()!=='').map(([k,v])=>`<div class="survey-detail-row"><span>${esc(labels[k]||k)}</span><b>${esc(detailValueLabel(k,String(v)))}</b></div>`).join('');
@@ -1465,11 +1524,11 @@ async function surveyEditPage(appointmentId){
       const box=$('#surveyDynamicFields');
       if(!box) return;
       const rerender=()=>{ const details=collectDynamicSurveyDetails(f,purposeField.value); box.innerHTML=dynamicSurveyFields(purposeField.value,details); wireSurveyDynamic(); };
-      const systemType=field(f,'systemType'); if(systemType) systemType.onchange=rerender;
-      const brand=field(f,'brandPreference'); if(brand) brand.onchange=rerender;
-      const model=field(f,'modelPreference'); if(model) model.onchange=()=>{ box.querySelector('.survey-model-other')?.classList.toggle('show',model.value==='Anders...'); };
-      box.querySelectorAll('select[name^="unitRoom"]').forEach(sel=>sel.onchange=()=>sel.closest('.survey-unit-card')?.querySelector('.survey-room-other')?.classList.toggle('show',sel.value==='Anders...'));
-      box.querySelectorAll('select[name^="unitCapacity"]').forEach(sel=>sel.onchange=()=>sel.closest('.survey-unit-card')?.querySelector('.survey-capacity-other')?.classList.toggle('show',sel.value==='Anders...'));
+      const systemCount=field(f,'systemCount'); if(systemCount) systemCount.onchange=rerender;
+      box.querySelectorAll('select[name^="system"][name$="Type"],select[name^="system"][name$="UnitCount"],select[name^="system"][name$="brandPreference"]').forEach(sel=>sel.onchange=rerender);
+      box.querySelectorAll('select[name^="system"][name$="modelPreference"]').forEach(sel=>sel.onchange=()=>sel.closest('.survey-system-card')?.querySelector('.survey-model-other')?.classList.toggle('show',sel.value==='Anders...'));
+      box.querySelectorAll('select[name*="unitRoom"]').forEach(sel=>sel.onchange=()=>sel.closest('.survey-unit-card')?.querySelector('.survey-room-other')?.classList.toggle('show',sel.value==='Anders...'));
+      box.querySelectorAll('select[name*="unitCapacity"]').forEach(sel=>sel.onchange=()=>sel.closest('.survey-unit-card')?.querySelector('.survey-capacity-other')?.classList.toggle('show',sel.value==='Anders...'));
     };
     purposeField.onchange=()=>{ $('#surveyDynamicFields').innerHTML=dynamicSurveyFields(purposeField.value,{}); wireSurveyDynamic(); };
     wireSurveyDynamic();

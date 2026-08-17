@@ -590,22 +590,20 @@ async function notificationsPage(){
     <article class="card"><p class="title">Actielijst</p><p class="muted">Alles wat nog een concrete vervolgactie nodig heeft, op één plek.</p></article>
     ${surveyItems.length?`<div class="home-section-title">Afgeronde opnames · vervolg nodig (${surveyItems.length})</div><div id="surveyFollowUpList">${surveyItems.map(surveyFollowUpCard).join('')}</div>`:''}
     <div class="home-section-title">Onderhoud (${items.length})</div>
-    <div class="filter-chips">
-      <button class="chip active" data-filter="all">Alles (${items.length})</button>
-      <button class="chip" data-filter="not_contacted">Nog benaderen</button>
-      <button class="chip" data-filter="contacted">Verstuurd</button>
-      <button class="chip" data-filter="scheduled">Ingepland</button>
-    </div>
+    ${items.length?`<label class="action-filter-control" for="maintenanceFilter"><span>Toon onderhoudsacties</span><select id="maintenanceFilter" aria-label="Filter onderhoudsacties">
+      <option value="all">Alles (${items.length})</option>
+      <option value="not_contacted">Nog benaderen (${items.filter(s=>s.contactStatus==='not_contacted').length})</option>
+      <option value="contacted">Verstuurd (${items.filter(s=>s.contactStatus==='contacted').length})</option>
+      <option value="scheduled">Ingepland (${items.filter(s=>s.contactStatus==='scheduled').length})</option>
+    </select></label>`:''}
     <div id="actionList"></div>
   </section>`;
   const draw=(filter='all')=>{
     const filtered=filter==='all'?items:items.filter(s=>s.contactStatus===filter);
     $('#actionList').innerHTML=filtered.map(quickActionCard).join('') || '<div class="card empty">Geen onderhoudsitems in deze status.</div>';
   };
-  document.querySelectorAll('.chip').forEach(btn=>btn.onclick=()=>{
-    document.querySelectorAll('.chip').forEach(b=>b.classList.toggle('active',b===btn));
-    draw(btn.dataset.filter);
-  });
+  const maintenanceFilter=$('#maintenanceFilter');
+  if(maintenanceFilter) maintenanceFilter.onchange=()=>draw(maintenanceFilter.value);
   draw();
 }
 

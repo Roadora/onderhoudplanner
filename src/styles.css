@@ -154,6 +154,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .filter-chips::-webkit-scrollbar{display:none}
 .chip{border:1px solid var(--line);background:#fff;color:#475467;border-radius:999px;padding:10px 13px;font-weight:800;white-space:nowrap}
 .chip.active{background:#e8f0ff;color:var(--blue);border-color:#bcd2ff}
+.action-filter-control{display:grid;gap:6px;margin:8px 0 12px}
+.action-filter-control>span{font-size:12px;font-weight:800;color:var(--muted)}
+.action-filter-control select{width:100%;min-height:46px;border:1px solid #bfd2ee;border-radius:14px;background:#fff;color:var(--text);padding:0 42px 0 13px;font-weight:800;outline:none}
+.action-filter-control select:focus{border-color:#75a7ec;box-shadow:0 0 0 4px rgba(7,87,200,.10)}
 
 .pilot-banner{border-left:5px solid var(--orange)}
 .settings-actions{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}

@@ -1724,18 +1724,73 @@ async function surveyEditPage(appointmentId){
           <div class="field"><label>Waarvoor is de opname?</label><select name="purpose">${[['nieuwe_installatie','Nieuwe installatie'],['vervanging','Vervanging'],['uitbreiding','Uitbreiding'],['storing_onderzoek','Storing / onderzoek'],['onderhoud','Onderhoud'],['anders','Anders']].map(([v,l])=>`<option value="${v}" ${value.purpose===v?'selected':''}>${l}</option>`).join('')}</select></div>
         </article>
         <article class="card survey-dynamic-card"><div id="surveyDynamicFields">${dynamicSurveyFields(value.purpose,value.details||{})}</div></article>
-        <article class="card"><p class="title">Afronding opname</p>
-        <div class="field"><label>Klantwens / algemene omschrijving</label><textarea name="scope" rows="3" placeholder="Wat wil de klant bereiken?">${esc(value.scope||'')}</textarea></div>
-        <div class="field"><label>Constateringen medewerker</label><textarea name="findings" rows="4" placeholder="Wat is ter plaatse vastgesteld?">${esc(value.findings||'')}</textarea></div>
-        <div class="field"><label>Overige technische notities</label><textarea name="technicalNotes" rows="3" placeholder="Alleen aanvullende informatie die nog niet hierboven staat">${esc(value.technical_notes||'')}</textarea></div>
-        <p class="helper">Na opslaan wordt deze opname afgerond en kan de eigenaar direct de offerte maken.</p>
-      </article>
-        <article class="card"><p class="title">Foto's toevoegen</p><p class="muted">Maak foto's van de situatie, typeplaatjes, leidingroute, meterkast en andere relevante details. Maximaal 8 MB per foto.</p><input id="surveyPhotos" type="file" accept="image/*" capture="environment" multiple><div class="survey-photo-grid" style="margin-top:12px">${photos.map(p=>`<div class="survey-photo-item"><a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a><button type="button" class="smallbtn" data-photo-id="${p.id}" data-photo-path="${p.storage_path}">Verwijder</button></div>`).join('')}</div></article>
+        <article class="card survey-photo-card">
+          <div class="row between survey-photo-heading"><div><p class="title">Foto's</p><p class="muted">Maak foto's direct vanuit Optero of kies bestaande foto's. Nieuwe foto's worden meteen veilig opgeslagen.</p></div><span class="survey-photo-count" id="surveyPhotoCount">${photos.length}</span></div>
+          <div class="survey-photo-actions">
+            <button class="primary survey-camera-btn" type="button" id="takeSurveyPhoto">📷 Foto maken</button>
+            <button class="secondary survey-gallery-btn" type="button" id="chooseSurveyPhotos">Foto uit galerij</button>
+          </div>
+          <input class="survey-photo-input" id="surveyCameraInput" type="file" accept="image/*" capture="environment">
+          <input class="survey-photo-input" id="surveyGalleryInput" type="file" accept="image/*" multiple>
+          <p class="survey-photo-status" id="surveyPhotoStatus" aria-live="polite"></p>
+          <div class="survey-photo-grid" id="surveyPhotoGrid">${photos.map(p=>`<div class="survey-photo-item"><a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a><button type="button" class="smallbtn" data-photo-id="${p.id}" data-photo-path="${p.storage_path}">Verwijder</button></div>`).join('') || '<p class="survey-photo-empty">Nog geen foto’s toegevoegd.</p>'}</div>
+        </article>
       </div>
       <button class="primary" id="surveySubmit" type="submit">${initialSurveyNeeded==='no'?'Opslaan als niet nodig':'Opname opslaan en afronden'}</button>
       ${currentRole!=='technician'?`<button class="danger survey-delete-if-not-needed" id="deleteSurveyAppointment" type="button" ${initialSurveyNeeded==='no'?'':'hidden'}>Opnameafspraak verwijderen</button>`:''}
     </form></section>`;
-    document.querySelectorAll('[data-photo-id]').forEach(btn=>btn.onclick=async()=>{ if(!confirm('Foto verwijderen?')) return; try{ await deleteSurveyPhoto(btn.dataset.photoId,btn.dataset.photoPath); await surveyEditPage(appointmentId); }catch(e){alert(e.message||'Foto verwijderen mislukt.');} });
+    let currentPhotos=[...photos];
+    const photoGrid=$('#surveyPhotoGrid');
+    const photoCount=$('#surveyPhotoCount');
+    const photoStatus=$('#surveyPhotoStatus');
+    const cameraInput=$('#surveyCameraInput');
+    const galleryInput=$('#surveyGalleryInput');
+    const takePhotoBtn=$('#takeSurveyPhoto');
+    const choosePhotosBtn=$('#chooseSurveyPhotos');
+    const setPhotoBusy=(busy,message='')=>{
+      if(takePhotoBtn) takePhotoBtn.disabled=busy;
+      if(choosePhotosBtn) choosePhotosBtn.disabled=busy;
+      if(photoStatus){ photoStatus.textContent=message; photoStatus.classList.toggle('show',Boolean(message)); }
+    };
+    const drawPhotos=()=>{
+      if(photoCount) photoCount.textContent=String(currentPhotos.length);
+      if(!photoGrid) return;
+      photoGrid.innerHTML=currentPhotos.length?currentPhotos.map(p=>`<div class="survey-photo-item"><a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a><button type="button" class="smallbtn" data-photo-id="${p.id}" data-photo-path="${p.storage_path}">Verwijder</button></div>`).join(''):'<p class="survey-photo-empty">Nog geen foto’s toegevoegd.</p>';
+      photoGrid.querySelectorAll('[data-photo-id]').forEach(btn=>btn.onclick=async()=>{
+        if(!confirm('Foto verwijderen?')) return;
+        btn.disabled=true;
+        try{
+          await deleteSurveyPhoto(btn.dataset.photoId,btn.dataset.photoPath);
+          currentPhotos=currentPhotos.filter(photo=>String(photo.id)!==String(btn.dataset.photoId));
+          drawPhotos();
+        }catch(error){
+          btn.disabled=false;
+          alert(error?.message||'Foto verwijderen mislukt.');
+        }
+      });
+    };
+    const uploadSelectedPhotos=async files=>{
+      if(!files?.length) return;
+      setPhotoBusy(true,files.length===1?'Foto opslaan…':`${files.length} foto's opslaan…`);
+      try{
+        await uploadSurveyPhotos(appointmentId,files);
+        currentPhotos=await listSurveyPhotos(appointmentId);
+        drawPhotos();
+        setPhotoBusy(false,files.length===1?'Foto opgeslagen':`${files.length} foto's opgeslagen`);
+        window.setTimeout(()=>setPhotoBusy(false,''),1800);
+      }catch(error){
+        setPhotoBusy(false,'');
+        alert(`Foto opslaan lukt niet.\n\n${error?.message||'Onbekende fout'}`);
+      }finally{
+        if(cameraInput) cameraInput.value='';
+        if(galleryInput) galleryInput.value='';
+      }
+    };
+    if(takePhotoBtn && cameraInput) takePhotoBtn.onclick=()=>cameraInput.click();
+    if(choosePhotosBtn && galleryInput) choosePhotosBtn.onclick=()=>galleryInput.click();
+    if(cameraInput) cameraInput.onchange=()=>uploadSelectedPhotos(cameraInput.files);
+    if(galleryInput) galleryInput.onchange=()=>uploadSelectedPhotos(galleryInput.files);
+    drawPhotos();
     const f=$('#surveyForm');
     const purposeField=field(f,'purpose');
     const surveyNeededField=field(f,'surveyNeeded');
@@ -1797,14 +1852,14 @@ async function surveyEditPage(appointmentId){
           : {...previousDetails,...collected,surveyNeeded:'yes'};
         await saveSurvey(appointmentId,{
           purpose,
-          scope:field(f,'scope').value.trim(),
-          findings:field(f,'findings').value.trim(),
-          technicalNotes:field(f,'technicalNotes').value.trim(),
+          // Deze drie velden zijn vanaf v0.12.4 niet meer onderdeel van het opnameformulier.
+          // Bestaande historische inhoud blijft bewaard en leesbaar in oude dossiers.
+          scope:value.scope||'',
+          findings:value.findings||'',
+          technicalNotes:value.technical_notes||'',
           status:'completed',
           details
         });
-        const files=surveyNeeded==='yes'?$('#surveyPhotos')?.files:null;
-        if(files?.length) await uploadSurveyPhotos(appointmentId,files);
         nav('surveyDetail',{appointmentId,back:route.back,appointmentBack:route.appointmentBack,date:route.date});
       }catch(error){
         alert(`Opname opslaan lukt niet.\n\n${error?.message||'Onbekende fout'}`);

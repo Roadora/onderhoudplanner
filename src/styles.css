@@ -486,3 +486,21 @@ body.auth-active{background:#edf3fb}
 @media (max-width:520px){
   .quote-row .form-grid-2,.workorder-detail-screen .form-grid-2{grid-template-columns:1fr}
 }
+
+/* v0.12.4 — directe opnamefoto's */
+.survey-photo-card{display:grid;gap:14px}
+.survey-photo-heading{align-items:flex-start}
+.survey-photo-heading>div{min-width:0}
+.survey-photo-heading .muted{margin-top:5px;line-height:1.45}
+.survey-photo-count{display:grid;place-items:center;min-width:34px;height:34px;padding:0 10px;border-radius:999px;background:#eef5ff;color:var(--blue);font-size:13px;font-weight:900;flex:0 0 auto}
+.survey-photo-actions{display:grid;grid-template-columns:1.15fr .85fr;gap:10px}
+.survey-photo-actions .primary,.survey-photo-actions .secondary{width:100%;min-height:50px;display:flex;align-items:center;justify-content:center}
+.survey-camera-btn{box-shadow:0 8px 18px rgba(7,87,200,.18)}
+.survey-gallery-btn{background:#fff}
+.survey-photo-input{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;overflow:hidden!important}
+.survey-photo-status{display:none;margin:-2px 0 0;padding:10px 12px;border-radius:12px;background:#eef8f1;color:#14783d;font-size:13px;font-weight:700}
+.survey-photo-status.show{display:block}
+.survey-photo-empty{grid-column:1/-1;margin:0;padding:20px 12px;border:1px dashed #cbd8ea;border-radius:14px;background:#f8fbff;color:var(--muted);font-size:13px;text-align:center}
+.survey-photo-card .survey-photo-grid{margin-top:0}
+.survey-photo-item .smallbtn{width:100%}
+@media(max-width:360px){.survey-photo-actions{grid-template-columns:1fr}}

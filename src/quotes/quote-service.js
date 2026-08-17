@@ -9,6 +9,13 @@ function context(){
   return {account,supabase};
 }
 
+export async function listQuotes(){
+  const {account,supabase}=context();
+  const {data,error}=await supabase.rpc('list_quotes_v128',{p_organization_id:account.organization.id});
+  if(error) throw error;
+  return Array.isArray(data)?data:[];
+}
+
 export async function getQuoteBySurvey(appointmentId){
   const {account,supabase}=context();
   const {data,error}=await supabase.rpc('get_quote_by_survey_v122',{p_organization_id:account.organization.id,p_survey_appointment_id:appointmentId});

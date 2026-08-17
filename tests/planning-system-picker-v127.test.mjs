@@ -11,7 +11,7 @@ assert.match(source, /wrap\.hidden=!show/);
 assert.match(source, /if\(sys && !show\) sys\.value=''/);
 assert.match(source, /const selectedSystemId=\['onderhoud','storing','controle'\]\.includes\(appointmentType\)/);
 assert.doesNotMatch(source, /<label>Systeem \/ installatie/);
-assert.match(config, /0\.12\.7 Slimmere planning/);
-assert.match(sw, /optero-v0\.12\.7/);
+assert.match(config, /APP_VERSION\s*=\s*'0\.12\.\d+[^']*'/);
+assert.match(sw, /optero-v0\.12\.\d+/);
 
 console.log('v0.12.7 planning system picker regression checks passed');

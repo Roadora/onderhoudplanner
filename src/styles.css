@@ -512,3 +512,6 @@ body.auth-active{background:#edf3fb}
 
 /* v0.12.7: installation picker is only relevant for existing-system service visits. */
 .system-picker-wrap[hidden]{display:none!important}
+
+/* v0.12.8: centraal offerteoverzicht */
+.quotes-intro{margin-bottom:12px}.quote-filter-card{padding:14px 16px}.quote-list{display:grid;gap:10px}.quote-list-card{width:100%;margin:0;text-align:left;color:var(--text);cursor:pointer;display:grid;gap:14px}.quote-list-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.quote-list-copy{display:grid;gap:4px;min-width:0}.quote-list-copy b{font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.quote-list-copy span{font-size:12px;color:var(--muted)}.quote-list-bottom{display:grid;grid-template-columns:1fr auto 12px;align-items:center;gap:10px;padding-top:12px;border-top:1px solid var(--line)}.quote-list-bottom span:first-child{font-size:12px;color:var(--muted)}.quote-list-bottom strong{font-size:17px;color:var(--blue)}.quote-list-empty{text-align:center;color:var(--muted);padding:24px 18px}

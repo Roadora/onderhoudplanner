@@ -4,7 +4,7 @@ import { getAccountContext } from './account-context.js';
 import { listTeamMembers, listPendingInvitations, inviteTeamMember, getAppointmentAssignments, setAppointmentAssignments } from './team/team-service.js';
 import { flushCloudSync, verifyCloudAppointment, deleteCloudAppointments, deleteCloudInstallation, deleteCloudCustomer, clearCloudOperationalData } from './data/cloud-repository.js';
 import { listSurveys, getSurvey, saveSurvey, listSurveyPhotos, uploadSurveyPhotos, deleteSurveyPhoto } from './surveys/survey-service.js';
-import { getQuoteBySurvey, getQuote, saveQuote } from './quotes/quote-service.js';
+import { listQuotes, getQuoteBySurvey, getQuote, saveQuote } from './quotes/quote-service.js';
 import { listPriceBook, savePriceBookItem, deletePriceBookItem } from './quotes/price-book-service.js';
 import { listWorkOrders, getWorkOrder, getWorkOrderByAppointment, getWorkOrderByQuote, saveWorkOrder, linkWorkOrderAppointment, updateWorkOrderExecution } from './workorders/workorder-service.js';
 
@@ -284,7 +284,7 @@ function contactStatusSelect(s){
 }
 
 const ROLE_ROUTE_ACCESS = Object.freeze({
-  owner: new Set(['dashboard','customers','agenda','more','settings','priceBook','account','team','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit','quote','workOrders','workOrderDetail','workOrderEdit','workOrderExecute']),
+  owner: new Set(['dashboard','customers','agenda','more','quotes','settings','priceBook','account','team','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit','quote','workOrders','workOrderDetail','workOrderEdit','workOrderExecute']),
   planner: new Set(['dashboard','customers','agenda','more','account','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit','workOrders','workOrderDetail','workOrderEdit','workOrderExecute']),
   technician: new Set(['myDay','account','appointmentDetail','surveyDetail','surveyEdit','workOrderDetail','workOrderExecute']),
   viewer: new Set(['account'])
@@ -318,7 +318,7 @@ function render(){
   backBtn.onclick = () => navBack();
 
   const titles = {
-    dashboard:'Home', customers:'Klanten', agenda:'Planning', more:'Meer', settings:'Instellingen', priceBook:'Prijzenboek', account:currentRole === 'technician' ? 'Mijn account' : 'Bedrijfsaccount', team:'Medewerkers', myDay:'Mijn dag',
+    dashboard:'Home', customers:'Klanten', agenda:'Planning', more:'Meer', quotes:'Offertes', settings:'Instellingen', priceBook:'Prijzenboek', account:currentRole === 'technician' ? 'Mijn account' : 'Bedrijfsaccount', team:'Medewerkers', myDay:'Mijn dag',
     new:'Nieuwe installatie', detail:'Klantdetail', editCustomer:'Klant bewerken',
     editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', newAppointment:'Afspraak inplannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails', notifications:'Actielijst', surveyDetail:'Opnamedossier', surveyEdit:'Opname invullen', quote:'Offerte', workOrders:'Werkorders', workOrderDetail:'Werkorder', workOrderEdit:'Werkorder voorbereiden', workOrderExecute:'Werkorder uitvoeren'
   };
@@ -328,6 +328,7 @@ function render(){
   if(route.name==='customers') customers();
   if(route.name==='agenda') agenda();
   if(route.name==='more') morePage();
+  if(route.name==='quotes') void quotesPage();
   if(route.name==='settings') settings();
   if(route.name==='priceBook') void priceBookPage();
   if(route.name==='team') teamPage();
@@ -369,7 +370,10 @@ function navBack(){
     });
     return nav('appointmentDetail',{appointmentId:route.appointmentId,back:currentRole==='technician'?'myDay':'agenda',date:route.date});
   }
-  if(route.name==='quote') return nav('surveyDetail',{appointmentId:route.appointmentId,back:route.back || 'appointmentDetail',appointmentBack:route.appointmentBack,date:route.date});
+  if(route.name==='quote'){
+    if(route.back==='quotes') return nav('quotes');
+    return nav('surveyDetail',{appointmentId:route.appointmentId,back:route.back || 'appointmentDetail',appointmentBack:route.appointmentBack,date:route.date});
+  }
   if(route.name==='workOrderEdit' || route.name==='workOrderExecute') return nav('workOrderDetail',{workOrderId:route.workOrderId,back:route.back || 'workOrders',appointmentId:route.appointmentId,date:route.date});
   if(route.name==='workOrderDetail') {
     if(route.back==='appointmentDetail') return nav('appointmentDetail',{appointmentId:route.appointmentId,back:currentRole==='technician'?'myDay':'agenda',date:route.date});
@@ -377,9 +381,10 @@ function navBack(){
     return nav(route.back || (currentRole==='technician'?'myDay':'workOrders'));
   }
   if(route.name==='workOrders') return nav('more');
+  if(route.name==='quotes') return nav('more');
   if(route.name==='appointmentDetail') return nav(currentRole==='technician' ? 'myDay' : 'dayPlan',{date:route.date || todayKey(),back:'agenda'});
   if(route.name==='priceBook'){
-    if(route.back==='quote' && route.appointmentId) return nav('quote',{appointmentId:route.appointmentId,quoteId:route.quoteId||null,back:'appointmentDetail'});
+    if(route.back==='quote' && route.appointmentId) return nav('quote',{appointmentId:route.appointmentId,quoteId:route.quoteId||null,back:route.quoteBack||'appointmentDetail'});
     return nav(route.back || 'more');
   }
   if(route.name==='notifications' || route.name==='account' || route.name==='team' || route.name==='settings') return nav(currentRole === 'technician' ? 'myDay' : 'dashboard');
@@ -601,7 +606,7 @@ function morePage(){
       <button onclick="nav('notifications')"><span>✓</span><b>Actielijst</b><small>Openstaande aandachtspunten</small></button>
       <button onclick="nav('agenda')"><span>📅</span><b>Planning</b><small>Agenda en afspraken</small></button>
       <button onclick="nav('workOrders')"><span>🧾</span><b>Werkorders</b><small>Voorbereiden, plannen en uitvoeren</small></button>
-      ${owner?`<button onclick="nav('team')"><span>👥</span><b>Medewerkers</b><small>Team en rollen</small></button>`:''}
+      ${owner?`<button onclick="nav('quotes')"><span>💶</span><b>Offertes</b><small>Concept, verstuurd en akkoord</small></button><button onclick="nav('team')"><span>👥</span><b>Medewerkers</b><small>Team en rollen</small></button>`:''}
       <button onclick="nav('account')"><span>🏢</span><b>Bedrijfsaccount</b><small>Account en organisatie</small></button>
     </div>
     ${owner?`<div class="home-section-title">Beheer</div><article class="card more-list"><button onclick="nav('settings')"><span>⚙️</span><span class="grow"><b>Instellingen</b><small>Bedrijfsprofiel en onderhoud</small></span><span>›</span></button><button onclick="nav('priceBook',{back:'more'})"><span>💶</span><span class="grow"><b>Prijzenboek</b><small>Standaardprijzen voor offertes</small></span><span>›</span></button><button type="button" disabled><span>📊</span><span class="grow"><b>Overzicht & rapportages</b><small>Wordt in een volgende stap uitgebreid</small></span><span class="coming-soon">Binnenkort</span></button><button type="button" disabled><span>🔗</span><span class="grow"><b>Integraties</b><small>Bijv. e-Boekhouden</small></span><span class="coming-soon">Binnenkort</span></button></article>`:''}
@@ -2100,6 +2105,40 @@ async function priceBookPage(){
   }
 }
 
+function quoteListDate(value){
+  if(!value) return '';
+  const date=new Date(value);
+  if(Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('nl-NL',{day:'numeric',month:'short',year:'numeric'}).format(date);
+}
+
+async function quotesPage(){
+  if(currentRole!=='owner') return nav(defaultRouteForRole());
+  app.innerHTML='<section class="screen quotes-screen"><article class="card"><p class="title">Offertes laden…</p><p class="muted">Optero haalt je offertes op.</p></article></section>';
+  try{
+    const quotes=await listQuotes();
+    if(route.name!=='quotes') return;
+    const status=route.status||'all';
+    const counts={all:quotes.length,draft:0,sent:0,accepted:0,rejected:0};
+    quotes.forEach(q=>{ if(Object.prototype.hasOwnProperty.call(counts,q.status)) counts[q.status]+=1; });
+    const visible=status==='all'?quotes:quotes.filter(q=>q.status===status);
+    const filterOptions=[['all','Alle offertes'],['draft','Concept'],['sent','Verstuurd'],['accepted','Akkoord'],['rejected','Afgewezen']];
+    app.innerHTML=`<section class="screen quotes-screen">
+      <article class="card quotes-intro"><p class="eyebrow">ALLEEN EIGENAAR</p><p class="title">Offertes</p><p class="muted">Alle gemaakte offertes op één plek. Open een offerte om prijzen, regels of status te wijzigen.</p></article>
+      <article class="card quote-filter-card"><div class="field"><label for="quoteStatusFilter">Filter op status</label><select id="quoteStatusFilter">${filterOptions.map(([value,label])=>`<option value="${value}" ${status===value?'selected':''}>${label} (${counts[value]||0})</option>`).join('')}</select></div></article>
+      <div class="quote-list">${visible.map(q=>`<button type="button" class="card quote-list-card" data-quote-id="${esc(q.id)}" data-appointment-id="${esc(q.survey_appointment_id)}">
+        <div class="quote-list-top"><div class="quote-list-copy"><b>${esc(q.customer_name||customer(q.customer_id)?.name||'Klant')}</b><span>${quoteListDate(q.updated_at)||'Datum onbekend'}</span></div><span class="status-badge ${quoteStatusClass(q.status)}">${quoteStatusLabel(q.status)}</span></div>
+        <div class="quote-list-bottom"><span>${Array.isArray(q.items)?q.items.length:0} ${Array.isArray(q.items)&&q.items.length===1?'regel':'regels'}</span><strong>${money(q.total_amount)}</strong><span class="right-chevron">›</span></div>
+      </button>`).join('') || `<article class="card empty quote-list-empty">${quotes.length?'Geen offertes met deze status.':'Nog geen offertes gemaakt. Maak eerst een offerte vanuit een afgeronde opname.'}</article>`}</div>
+    </section>`;
+    const filter=$('#quoteStatusFilter');
+    if(filter) filter.onchange=()=>{ route={...route,status:filter.value}; quotesPage(); };
+    document.querySelectorAll('[data-quote-id]').forEach(btn=>btn.onclick=()=>nav('quote',{appointmentId:btn.dataset.appointmentId,quoteId:btn.dataset.quoteId,back:'quotes'}));
+  }catch(error){
+    app.innerHTML=`<section class="screen quotes-screen"><article class="card"><p class="title">Offertes nog niet beschikbaar</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p><p class="helper">Voer de meegeleverde Supabase-migratie quotes_list_v128.sql één keer uit.</p></article></section>`;
+  }
+}
+
 async function quotePage(appointmentId,quoteId=null){
   if(currentRole!=='owner') return nav(defaultRouteForRole());
   const appointment=appointments().find(a=>a.id===appointmentId);
@@ -2164,7 +2203,7 @@ async function quotePage(appointmentId,quoteId=null){
         const saveBtn=row.querySelector('[data-save-price]'); if(saveBtn) saveBtn.onclick=()=>saveRowAsStandard(index);
       });
     };
-    $('#openPriceBook').onclick=()=>nav('priceBook',{back:'quote',appointmentId,quoteId:value.id||quoteId||null});
+    $('#openPriceBook').onclick=()=>nav('priceBook',{back:'quote',quoteBack:route.back,appointmentId,quoteId:value.id||quoteId||null});
     $('#addQuoteBookRow').onclick=()=>{
       draftItems=collectQuoteRows(f,draftItems);
       const id=$('#quotePriceBookExtra').value; const item=priceBookEntries.find(entry=>String(entry.id)===String(id));
@@ -2174,7 +2213,7 @@ async function quotePage(appointmentId,quoteId=null){
     };
     $('#addQuoteRow').onclick=()=>{ draftItems=collectQuoteRows(f,draftItems); draftItems.push({kind:'extra',description:'',quantity:1,unit:'stuk',unitPrice:0,priceBookId:null,suggestedPrice:0,priceSource:'none'}); redraw(); updateTotal(); };
     redraw(); updateTotal();
-    const open=$('#openQuoteWorkOrder'); if(open) open.onclick=()=>nav('workOrderDetail',{workOrderId:workOrder.id,back:'surveyDetail',appointmentId,date:route.date});
+    const open=$('#openQuoteWorkOrder'); if(open) open.onclick=()=>nav('workOrderDetail',{workOrderId:workOrder.id,back:route.back==='quotes'?'quotes':'surveyDetail',appointmentId,date:route.date});
     f.onsubmit=async e=>{
       e.preventDefault();
       const submit=$('#quoteSubmit'); submit.disabled=true; submit.textContent='Opslaan…';
@@ -2184,7 +2223,7 @@ async function quotePage(appointmentId,quoteId=null){
         const savedId=await saveQuote({id:value.id,surveyAppointmentId:appointmentId,customerId:appointment.customerId,status,items:draftItems,notes:field(f,'notes').value.trim()});
         workOrder=await getWorkOrderByQuote(savedId).catch(()=>null);
         if(status==='accepted' && workOrder){
-          nav('workOrderDetail',{workOrderId:workOrder.id,back:'surveyDetail',appointmentId,date:route.date});
+          nav('workOrderDetail',{workOrderId:workOrder.id,back:route.back==='quotes'?'quotes':'surveyDetail',appointmentId,date:route.date});
         }else{
           nav('quote',{appointmentId,quoteId:savedId,back:route.back,appointmentBack:route.appointmentBack,date:route.date});
         }

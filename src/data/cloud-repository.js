@@ -382,6 +382,26 @@ export function getCloudStatus() {
   return { ...lastStatus, revision: cloudRevision, pending: pendingRaw !== null };
 }
 
+/**
+ * Bevestigt server-side dat een afspraak werkelijk in Supabase staat.
+ * Dit voorkomt dat de UI een afspraak als opgeslagen toont wanneer alleen de
+ * lokale cache is bijgewerkt of een cloudsynchronisatie ongemerkt niet liep.
+ */
+export async function verifyCloudAppointment(appointmentId) {
+  const supabase = getSupabaseClient();
+  const organizationId = getOrganizationId();
+  if (!supabase || !organizationId || !appointmentId) throw new Error('Afspraakcontrole kan niet worden uitgevoerd.');
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('id,appointment_date,appointment_time,updated_at')
+    .eq('organization_id', organizationId)
+    .eq('id', String(appointmentId))
+    .maybeSingle();
+  if (error) throw enhanceCloudError(error);
+  if (!data?.id) throw new Error('De afspraak is nog niet veilig in de cloud opgeslagen.');
+  return data;
+}
+
 
 
 function recoveryBackups() {

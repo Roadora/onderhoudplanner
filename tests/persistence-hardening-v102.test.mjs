@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const app=fs.readFileSync(new URL('../src/app.js', import.meta.url),'utf8');
+const cloud=fs.readFileSync(new URL('../src/data/cloud-repository.js', import.meta.url),'utf8');
+const team=fs.readFileSync(new URL('../src/team/team-service.js', import.meta.url),'utf8');
+const pwa=fs.readFileSync(new URL('../src/pwa.js', import.meta.url),'utf8');
+assert.match(app,/verifyCloudAppointment\(appointmentId\)/);
+assert.match(cloud,/export async function verifyCloudAppointment/);
+assert.match(cloud,/from\('appointments'\)/);
+assert.match(team,/insertedCount/);
+assert.match(team,/getAppointmentAssignments\(appointmentId\)/);
+assert.match(team,/medewerkerstoewijzing is niet volledig opgeslagen/i);
+assert.match(pwa,/updateViaCache:\s*'none'/);
+assert.match(pwa,/registration\.update\(\)/);
+console.log('persistence-hardening-v102: OK');

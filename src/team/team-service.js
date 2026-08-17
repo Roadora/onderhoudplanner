@@ -73,11 +73,21 @@ export async function setAppointmentAssignments(appointmentId, userIds = []) {
   const account = getAccountContext();
   const supabase = getSupabaseClient();
   const cleanIds = [...new Set((userIds || []).filter(Boolean))];
-  const { error } = await supabase.rpc('set_appointment_assignments', {
+  const { data: insertedCount, error } = await supabase.rpc('set_appointment_assignments', {
     p_organization_id: account.organization.id,
     p_appointment_id: appointmentId,
     p_user_ids: cleanIds
   });
   if (error) throw error;
-  return cleanIds;
+
+  // De server kan een ongeldig/inactief teamlid bewust overslaan. Dat mag nooit
+  // als een succesvolle toewijzing worden gepresenteerd. Lees daarom de
+  // definitieve serverstatus terug en vergelijk exact met wat de planner koos.
+  const persisted = await getAppointmentAssignments(appointmentId);
+  const persistedIds = [...new Set(persisted.map(item => item.user_id).filter(Boolean))].sort();
+  const expectedIds = [...cleanIds].sort();
+  if (Number(insertedCount ?? 0) !== expectedIds.length || JSON.stringify(persistedIds) !== JSON.stringify(expectedIds)) {
+    throw new Error('De medewerkerstoewijzing is niet volledig opgeslagen. Controleer of alle geselecteerde medewerkers actief zijn en probeer opnieuw.');
+  }
+  return persisted;
 }

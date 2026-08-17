@@ -391,12 +391,14 @@ export async function verifyCloudAppointment(appointmentId) {
   const supabase = getSupabaseClient();
   const organizationId = getOrganizationId();
   if (!supabase || !organizationId || !appointmentId) throw new Error('Afspraakcontrole kan niet worden uitgevoerd.');
-  const { data, error } = await supabase
-    .from('appointments')
-    .select('id,appointment_date,appointment_time,updated_at')
-    .eq('organization_id', organizationId)
-    .eq('id', String(appointmentId))
-    .maybeSingle();
+
+  // appointments is bewust NIET rechtstreeks toegankelijk voor browseraccounts.
+  // Verifieer daarom via een smalle SECURITY DEFINER-RPC die zelf organisatie- en
+  // rolcontrole uitvoert. Zo hoeven we geen tabelrechten open te zetten.
+  const { data, error } = await supabase.rpc('verify_appointment_persisted_v103', {
+    p_organization_id: organizationId,
+    p_appointment_id: String(appointmentId)
+  });
   if (error) throw enhanceCloudError(error);
   if (!data?.id) throw new Error('De afspraak is nog niet veilig in de cloud opgeslagen.');
   return data;

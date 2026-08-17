@@ -276,8 +276,8 @@ function contactStatusSelect(s){
 }
 
 const ROLE_ROUTE_ACCESS = Object.freeze({
-  owner: new Set(['dashboard','customers','agenda','settings','account','team','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit']),
-  planner: new Set(['dashboard','customers','agenda','account','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit']),
+  owner: new Set(['dashboard','customers','agenda','more','settings','account','team','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit']),
+  planner: new Set(['dashboard','customers','agenda','more','account','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit']),
   technician: new Set(['myDay','account','appointmentDetail','surveyDetail','surveyEdit']),
   viewer: new Set(['account'])
 });
@@ -298,7 +298,7 @@ function nav(name, params={}){
 }
 
 function updateFab(){
-  const show = currentRole !== 'technician' && ['dashboard','customers'].includes(route.name);
+  const show = currentRole !== 'technician' && route.name==='customers';
   fabAdd.style.display = show ? 'block' : 'none';
   fabAdd.onclick = () => nav('new',{back:route.name});
 }
@@ -306,11 +306,11 @@ function updateFab(){
 function render(){
   if(!canAccessRoute(route.name)) route = {name:defaultRouteForRole()};
   document.querySelectorAll('.bottom-nav button').forEach(b=>b.classList.toggle('active',b.dataset.route===route.name));
-  backBtn.hidden = ['dashboard','customers','agenda','settings','myDay'].includes(route.name);
+  backBtn.hidden = ['dashboard','customers','agenda','more','myDay'].includes(route.name);
   backBtn.onclick = () => navBack();
 
   const titles = {
-    dashboard:'Dashboard', customers:'Klanten', agenda:'Agenda', settings:'Instellingen', account:currentRole === 'technician' ? 'Mijn account' : 'Bedrijfsaccount', team:'Medewerkers', myDay:'Mijn dag',
+    dashboard:'Home', customers:'Klanten', agenda:'Planning', more:'Meer', settings:'Instellingen', account:currentRole === 'technician' ? 'Mijn account' : 'Bedrijfsaccount', team:'Medewerkers', myDay:'Mijn dag',
     new:'Nieuwe installatie', detail:'Klantdetail', editCustomer:'Klant bewerken',
     editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', newAppointment:'Afspraak inplannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails', notifications:'Actielijst', surveyDetail:'Opnamedossier', surveyEdit:'Opname invullen'
   };
@@ -319,6 +319,7 @@ function render(){
   if(route.name==='dashboard') dashboard();
   if(route.name==='customers') customers();
   if(route.name==='agenda') agenda();
+  if(route.name==='more') morePage();
   if(route.name==='settings') settings();
   if(route.name==='team') teamPage();
   if(route.name==='myDay') myDayPage();
@@ -341,7 +342,7 @@ function render(){
 function navBack(){
   if(route.name==='surveyDetail' || route.name==='surveyEdit') return nav('appointmentDetail',{appointmentId:route.appointmentId,back:currentRole==='technician'?'myDay':'agenda'});
   if(route.name==='appointmentDetail') return nav(currentRole==='technician' ? 'myDay' : 'dayPlan',{date:route.date || todayKey(),back:'agenda'});
-  if(route.name==='notifications' || route.name==='account' || route.name==='team') return nav(currentRole === 'technician' ? 'myDay' : 'dashboard');
+  if(route.name==='notifications' || route.name==='account' || route.name==='team' || route.name==='settings') return nav(currentRole === 'technician' ? 'myDay' : 'dashboard');
   if(route.name==='detail') return nav(route.back || 'dashboard');
   if(route.name==='editCustomer') return nav('detail',{customerId:route.customerId,back:'customers'});
   if(route.name==='editSystem' || route.name==='planAppointment'){
@@ -440,21 +441,52 @@ function quickActionCard(s){
     </div>
   </article>`;
 }
+function todayDashboardAppointments(){
+  return appointmentsOnDate(todayKey());
+}
+function dashboardAppointmentRow(a){
+  const c=customer(a.customerId) || (a.systemId ? customer(systemById(a.systemId)?.customerId) : null) || {};
+  return `<button class="today-row" onclick="nav('appointmentDetail',{appointmentId:'${a.id}',date:'${todayKey()}',back:'dashboard'})"><span class="today-time">${esc(a.time||'--:--')}</span><span class="today-type">${appointmentIcon(a.type)} ${appointmentTitle(a.type||'onderhoud')}</span><span class="today-customer">${esc(c.name||'Geen klant')}</span><span class="right-chevron">›</span></button>`;
+}
+function dashboardAttentionItems(){
+  const items=[];
+  const maintenance=actionSystems();
+  if(maintenance.length) items.push({icon:'🟠',title:`${maintenance.length} onderhoudsmoment${maintenance.length===1?'':'en'} vragen actie`,sub:'Bekijk wie benaderd of ingepland moet worden',action:"nav('notifications')"});
+  const unplanned=appointments().filter(a=>a.date>=todayKey() && !a.time);
+  if(unplanned.length) items.push({icon:'🔵',title:`${unplanned.length} afspraak${unplanned.length===1?'':'en'} zonder starttijd`,sub:'Maak de planning compleet',action:"nav('agenda')"});
+  return items;
+}
 function dashboard(){
-  const action = actionSystems().slice(0,4);
-  app.innerHTML = `<section class="screen">
-    <article class="card">
-      <p class="title dashboard-greeting">${dashboardGreeting()}</p>
-      <p class="muted">${esc(state.settings.companyName)} · ${actionSystems().length} onderhoudsmomenten vragen aandacht.</p>
+  const today=todayDashboardAppointments();
+  const attention=dashboardAttentionItems();
+  const dateLabel=new Intl.DateTimeFormat('nl-NL',{weekday:'long',day:'numeric',month:'long'}).format(new Date(`${todayKey()}T12:00:00`));
+  app.innerHTML = `<section class="screen home-screen">
+    <article class="card home-welcome"><p class="title dashboard-greeting">${dashboardGreeting()}</p><p class="muted">${esc(dateLabel.charAt(0).toUpperCase()+dateLabel.slice(1))}</p></article>
+    <article class="card today-card">
+      <div class="row between home-section-heading"><div><p class="home-kicker">VANDAAG</p><p class="title">${today.length} ${today.length===1?'afspraak':'afspraken'}</p></div><button class="link" onclick="nav('agenda')">Bekijk planning →</button></div>
+      <div class="today-list">${today.map(dashboardAppointmentRow).join('') || '<div class="home-empty">Vandaag staat er niets gepland.</div>'}</div>
     </article>
-    ${currentRole==='technician'?'':`<article class="card survey-dashboard-card"><div class="row between"><div><p class="title">📋 Opnames</p><p class="muted">Plan een opname en leg bevindingen, technische notities en foto's vast.</p></div><button class="smallbtn" onclick="nav('newAppointment',{type:'opname',date:'${todayKey()}',back:'dashboard'})">+ Opname</button></div></article>`}
-    ${statCards()}
-    ${revenueCard()}
-    <div class="list-header">
-      <h2>Te benaderen</h2>
-      <button class="link" onclick="nav('notifications')">Volledige actielijst</button>
+    <div class="home-section-title">Snel toevoegen</div>
+    <div class="quick-create-grid">
+      <button onclick="nav('new',{back:'dashboard'})"><span>👤</span><b>Klant</b></button>
+      <button onclick="nav('newAppointment',{type:'opname',date:'${todayKey()}',back:'dashboard'})"><span>📋</span><b>Opname</b></button>
+      <button onclick="nav('newAppointment',{date:'${todayKey()}',back:'dashboard'})"><span>＋</span><b>Inplannen</b></button>
     </div>
-    ${action.map(quickActionCard).join('') || '<div class="card empty">Geen onderhoud binnen de ingestelde periode.</div>'}
+    <div class="row between attention-heading"><div><p class="home-section-title">Aandacht nodig</p><span class="attention-count">${attention.length}</span></div>${attention.length?`<button class="link" onclick="nav('notifications')">Bekijk alles</button>`:''}</div>
+    <article class="card attention-card">${attention.map(i=>`<button class="attention-row" onclick="${i.action}"><span class="attention-icon">${i.icon}</span><span class="grow"><b>${i.title}</b><small>${i.sub}</small></span><span class="right-chevron">›</span></button>`).join('') || '<div class="home-empty success-empty"><b>Alles bijgewerkt</b><span>Er zijn op dit moment geen acties die je aandacht nodig hebben.</span></div>'}</article>
+  </section>`;
+}
+function morePage(){
+  const owner=currentRole==='owner';
+  app.innerHTML=`<section class="screen more-screen">
+    <article class="card more-intro"><p class="title">Meer</p><p class="muted">Overzicht, beheer en instellingen op één plek.</p></article>
+    <div class="more-grid">
+      <button onclick="nav('notifications')"><span>✓</span><b>Actielijst</b><small>Openstaande aandachtspunten</small></button>
+      <button onclick="nav('agenda')"><span>📅</span><b>Planning</b><small>Agenda en afspraken</small></button>
+      ${owner?`<button onclick="nav('team')"><span>👥</span><b>Medewerkers</b><small>Team en rollen</small></button>`:''}
+      <button onclick="nav('account')"><span>🏢</span><b>Bedrijfsaccount</b><small>Account en organisatie</small></button>
+    </div>
+    ${owner?`<div class="home-section-title">Beheer</div><article class="card more-list"><button onclick="nav('settings')"><span>⚙️</span><span class="grow"><b>Instellingen</b><small>Bedrijfsprofiel en onderhoud</small></span><span>›</span></button><button type="button" disabled><span>📊</span><span class="grow"><b>Overzicht & rapportages</b><small>Wordt in een volgende stap uitgebreid</small></span><span class="coming-soon">Binnenkort</span></button><button type="button" disabled><span>🔗</span><span class="grow"><b>Integraties</b><small>Bijv. e-Boekhouden</small></span><span class="coming-soon">Binnenkort</span></button></article>`:''}
   </section>`;
 }
 function notificationsPage(){

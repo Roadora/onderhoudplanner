@@ -456,3 +456,20 @@ body.auth-active{background:#edf3fb}
 .survey-not-needed-card{border-color:#f2d3a4;background:#fffbf5}
 .survey-delete-if-not-needed{margin-top:-2px}
 @media(max-width:560px){.survey-extra-work-head,.survey-extra-detail-item>div{align-items:flex-start}.survey-extra-work-head{flex-direction:column}.survey-extra-work-head .smallbtn{align-self:flex-end}}
+
+/* v0.12.2 — offerte -> werkorder -> uitvoering */
+.workflow-next-card{border:1px solid #cfe0ff;background:linear-gradient(180deg,#fff,#f8fbff)}
+.workflow-next-card .primary{width:100%;margin-top:14px}
+.quote-row{padding:14px 0;border-bottom:1px solid #e5eaf2}
+.quote-row:last-child{border-bottom:0}
+.quote-row-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.quote-total-box{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding:14px 16px;border-radius:16px;background:#f3f7fd}
+.quote-total-box b{font-size:1.2rem;color:#0757c8}
+.workorder-list-card{position:relative;cursor:pointer}
+.workorder-list-card .right-chevron{position:absolute;right:16px;bottom:14px}
+.workorder-detail-screen .primary,.workorder-detail-screen>.secondary{width:100%}
+.workorder-extra-summary{margin-top:16px}
+.workorder-extra-summary .survey-extra-detail-item{margin-top:10px}
+@media (max-width:520px){
+  .quote-row .form-grid-2,.workorder-detail-screen .form-grid-2{grid-template-columns:1fr}
+}

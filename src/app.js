@@ -51,6 +51,9 @@ const SURVEY_ROOM_OPTIONS = [
   'Woonkamer','Slaapkamer','Keuken','Kantoor','Zolder','Serre','Garage','Praktijkruimte','Winkelruimte','Anders...'
 ];
 const SURVEY_CAPACITY_OPTIONS = ['2.0','2.5','3.5','4.2','5.0','6.0','7.1','8.0','10.0','Anders...'];
+const SURVEY_REFRIGERANT_OPTIONS = [
+  ['unknown','Nog bepalen'],['R32','R32'],['R410A','R410A'],['R290','R290'],['R454B','R454B'],['R407C','R407C'],['other','Anders']
+];
 
 const DEFAULT_SETTINGS = {
   companyName:'Airco Service',
@@ -398,6 +401,7 @@ function actionSystems(){
   return sortedSystems().filter(s=>s.reminderCompany!==false && isSystemActiveForPlanning(s) && daysUntil(nextDate(s))<=leadDays);
 }
 function surveyRequiresFollowUp(survey={}){
+  if(survey.details?.surveyNeeded==='no') return false;
   if(survey.status!=='completed') return false;
   if(survey.purpose==='onderhoud') return false;
   if(survey.purpose==='storing_onderzoek' && survey.details?.followUp==='opgelost') return false;
@@ -1374,7 +1378,7 @@ function ynSelect(name,label,value='unknown'){
 }
 function surveyField(name,label,value='',placeholder='',type='text'){
   if(type==='textarea') return `<div class="field"><label>${label}</label><textarea name="${name}" rows="3" placeholder="${esc(placeholder)}">${esc(value||'')}</textarea></div>`;
-  if(type==='number') return `<div class="field"><label>${label}</label><input name="${name}" type="number" min="0" step="0.1" value="${esc(value??'')}" placeholder="${esc(placeholder)}"></div>`;
+  if(type==='number') return `<div class="field"><label>${label}</label><input name="${name}" type="number" min="0" step="any" value="${esc(value??'')}" placeholder="${esc(placeholder)}"></div>`;
   return `<div class="field"><label>${label}</label><input name="${name}" type="text" value="${esc(value||'')}" placeholder="${esc(placeholder)}"></div>`;
 }
 function surveySelect(name,label,value,options){
@@ -1405,6 +1409,10 @@ function legacySurveySystem(details={}){
     modelPreference:details.modelPreference || '',
     brandOther:details.brandOther || '',
     modelOther:details.modelOther || '',
+    lineLengthM:details.lineLengthM || details.estimatedLineLengthM || '',
+    refrigerantType:details.refrigerantType || details.existingRefrigerant || 'unknown',
+    refrigerantAmountKg:details.refrigerantAmountKg || '',
+    additionalRefrigerantG:details.additionalRefrigerantG || '',
     units:Array.isArray(details.units)?details.units:[]
   };
 }
@@ -1421,6 +1429,10 @@ function normalizedSurveySystems(details={},count=1){
       modelPreference:src.modelPreference || '',
       brandOther:src.brandOther || '',
       modelOther:src.modelOther || '',
+      lineLengthM:src.lineLengthM || (i===0?details.estimatedLineLengthM:'') || '',
+      refrigerantType:src.refrigerantType || 'unknown',
+      refrigerantAmountKg:src.refrigerantAmountKg || '',
+      additionalRefrigerantG:src.additionalRefrigerantG || '',
       units:normalizedSurveyInstallUnits(src,unitCount)
     };
   });
@@ -1462,7 +1474,7 @@ function surveyInstallUnitCard(unit,index,prefix=''){
     </div>
     <div class="form-grid-2">
       <div class="field survey-room-other ${room==='Anders...' || !roomKnown?'show':''}"><label>Andere ruimte</label><input name="${prefix}unitRoomOther${n}" value="${esc(!roomKnown?room:'')}" placeholder="Bijv. hobbykamer"></div>
-      <div class="field survey-capacity-other ${capacity==='Anders...' || !capacityKnown?'show':''}"><label>Ander vermogen (kW)</label><input name="${prefix}unitCapacityOther${n}" type="number" min="0" step="0.1" value="${esc(!capacityKnown?capacity:'')}" placeholder="Bijv. 3.0"></div>
+      <div class="field survey-capacity-other ${capacity==='Anders...' || !capacityKnown?'show':''}"><label>Ander vermogen (kW)</label><input name="${prefix}unitCapacityOther${n}" type="number" min="0" step="any" value="${esc(!capacityKnown?capacity:'')}" placeholder="Bijv. 3.0"></div>
     </div>
   </div>`;
 }
@@ -1477,8 +1489,71 @@ function surveySystemCard(system,index){
     ${surveySelect(`${prefix}Type`,'Type systeem',type,[['single_split','Single split · 1 binnenunit'],['multi_split','Multi split · 2–5 binnenunits'],['triple_split','Triple split · 3 binnenunits'],['warmtepomp','Warmtepomp'],['anders','Anders']])}
     ${type==='multi_split'?surveySelect(`${prefix}UnitCount`,'Aantal binnenunits',String(unitCount),[['2','2 binnenunits'],['3','3 binnenunits'],['4','4 binnenunits'],['5','5 binnenunits']]):`<input type="hidden" name="${prefix}UnitCount" value="${unitCount}">`}
     ${surveyBrandModelFields(system,prefix)}
+    <div class="survey-system-tech">
+      <div class="survey-section-head compact"><b>Leiding & koudemiddel</b><span>Technische gegevens van dit complete systeem.</span></div>
+      <div class="form-grid-2">
+        ${surveyField(`${prefix}LineLengthM`,'Leidinglengte (m)',system.lineLengthM||'','Bijv. 8','number')}
+        ${surveySelect(`${prefix}RefrigerantType`,'Koudemiddel',system.refrigerantType||'unknown',SURVEY_REFRIGERANT_OPTIONS)}
+      </div>
+      <div class="form-grid-2">
+        ${surveyField(`${prefix}RefrigerantAmountKg`,'Koudemiddelvulling (kg)',system.refrigerantAmountKg||'','Bijv. 0,85','number')}
+        ${surveyField(`${prefix}AdditionalRefrigerantG`,'Extra bijvullen (g)',system.additionalRefrigerantG||'','Bijv. 120','number')}
+      </div>
+    </div>
     <div class="survey-units-grid">${units.map((u,i)=>surveyInstallUnitCard(u,i,prefix)).join('')}</div>
   </div>`;
+}
+function surveyTechnicalFields(purpose,details={}){
+  if(purpose==='nieuwe_installatie') return '';
+  return `<div class="survey-section-head"><b>Leiding & koudemiddel</b><span>Leg vast wat je ter plaatse kunt controleren. Automatische modelgegevens bouwen we hier later bovenop.</span></div>
+    <div class="form-grid-2">
+      ${surveyField('technicalLineLengthM','Leidinglengte (m)',details.technicalLineLengthM||details.estimatedLineLengthM||'','Bijv. 8','number')}
+      ${surveySelect('technicalRefrigerantType','Koudemiddel',details.technicalRefrigerantType||details.existingRefrigerant||'unknown',SURVEY_REFRIGERANT_OPTIONS)}
+    </div>
+    <div class="form-grid-2">
+      ${surveyField('technicalRefrigerantAmountKg','Koudemiddelvulling (kg)',details.technicalRefrigerantAmountKg||'','Bijv. 0,85','number')}
+      ${surveyField('technicalAdditionalRefrigerantG','Extra bijvullen (g)',details.technicalAdditionalRefrigerantG||'','Bijv. 120','number')}
+    </div>`;
+}
+function collectSurveyTechnicalDetails(form,purpose){
+  if(purpose==='nieuwe_installatie') return {};
+  return {
+    technicalLineLengthM:field(form,'technicalLineLengthM')?.value || '',
+    technicalRefrigerantType:field(form,'technicalRefrigerantType')?.value || 'unknown',
+    technicalRefrigerantAmountKg:field(form,'technicalRefrigerantAmountKg')?.value || '',
+    technicalAdditionalRefrigerantG:field(form,'technicalAdditionalRefrigerantG')?.value || ''
+  };
+}
+function normalizedExtraWork(details={}){
+  return (Array.isArray(details.extraWork)?details.extraWork:[]).map(item=>({
+    description:String(item?.description||''),
+    quantity:String(item?.quantity||''),
+    note:String(item?.note||'')
+  }));
+}
+function surveyExtraWorkFields(items=[]){
+  if(!items.length) return `<div class="survey-extra-empty">Nog geen extra werkzaamheden geregistreerd.</div>`;
+  return items.map((item,index)=>`<div class="survey-extra-work-card" data-extra-work-index="${index}">
+    <div class="survey-extra-work-head"><b>Extra werkzaamheid ${index+1}</b><button type="button" class="smallbtn danger-lite" data-remove-extra="${index}">Verwijder</button></div>
+    ${surveyField(`extraWorkDescription${index+1}`,'Werkzaamheden',item.description||'','Bijv. extra leidinggoot geplaatst')}
+    ${surveyField(`extraWorkQuantity${index+1}`,'Hoeveelheid / duur',item.quantity||'','Bijv. 3 meter of 45 min')}
+    ${surveyField(`extraWorkNote${index+1}`,'Notitie',item.note||'','Wat is uitgevoerd of nog nodig?','textarea')}
+  </div>`).join('');
+}
+function collectSurveyExtraWork(form){
+  return [...form.querySelectorAll('[data-extra-work-index]')].map(card=>{
+    const index=Number(card.dataset.extraWorkIndex)+1;
+    return {
+      description:field(form,`extraWorkDescription${index}`)?.value.trim() || '',
+      quantity:field(form,`extraWorkQuantity${index}`)?.value.trim() || '',
+      note:field(form,`extraWorkNote${index}`)?.value.trim() || ''
+    };
+  }).filter(item=>item.description || item.quantity || item.note);
+}
+function renderExtraWorkDetails(details={}){
+  const items=normalizedExtraWork(details).filter(item=>item.description || item.quantity || item.note);
+  if(!items.length) return '';
+  return `<div class="survey-extra-detail"><div class="survey-section-head compact"><b>Extra werkzaamheden</b><span>Geregistreerd zonder prijsinformatie.</span></div>${items.map((item,index)=>`<div class="survey-extra-detail-item"><div><b>${esc(item.description||`Werkzaamheid ${index+1}`)}</b>${item.quantity?`<span>${esc(item.quantity)}</span>`:''}</div>${item.note?`<p>${esc(item.note)}</p>`:''}</div>`).join('')}</div>`;
 }
 function dynamicSurveyFields(purpose,details={}){
   if(purpose==='nieuwe_installatie'){
@@ -1555,7 +1630,13 @@ function collectDynamicSurveyDetails(form,purpose){
           capacityKw:capacityChoice==='Anders...' ? (field(form,`${prefix}unitCapacityOther${u}`)?.value.trim() || 'Anders') : capacityChoice
         };
       });
-      return {systemType,unitCount,brandPreference:brand,modelPreference:model,units};
+      return {
+        systemType,unitCount,brandPreference:brand,modelPreference:model,units,
+        lineLengthM:field(form,`${prefix}LineLengthM`)?.value || '',
+        refrigerantType:field(form,`${prefix}RefrigerantType`)?.value || 'unknown',
+        refrigerantAmountKg:field(form,`${prefix}RefrigerantAmountKg`)?.value || '',
+        additionalRefrigerantG:field(form,`${prefix}AdditionalRefrigerantG`)?.value || ''
+      };
     });
     return {
       systemCount:count, systems,
@@ -1593,7 +1674,9 @@ function renderSurveyDetails(purpose,details={}){
       const units=normalizedSurveyInstallUnits(system,surveyInstallUnitCount(system.systemType,system.unitCount));
       const rows=[
         ['Type',detailValueLabel('systemType',system.systemType)],
-        ['Merk',system.brandPreference],['Model / serie',system.modelPreference],['Binnenunits',system.unitCount]
+        ['Merk',system.brandPreference],['Model / serie',system.modelPreference],['Binnenunits',system.unitCount],
+        ['Leidinglengte (m)',system.lineLengthM],['Koudemiddel',detailValueLabel('refrigerantType',system.refrigerantType)],
+        ['Koudemiddelvulling (kg)',system.refrigerantAmountKg],['Extra bijvullen (g)',system.additionalRefrigerantG]
       ].filter(([,v])=>String(v??'').trim()!=='').map(([l,v])=>`<div class="survey-detail-row"><span>${esc(l)}</span><b>${esc(String(v))}</b></div>`).join('');
       const unitRows=units.map((u,unitIndex)=>`<div class="survey-detail-row"><span>Binnenunit ${unitIndex+1}</span><b>${esc(u.room||'-')} · ${esc(u.capacityKw||'-')}${u.capacityKw && u.capacityKw!=='Anders'?' kW':''}</b></div>`).join('');
       return `<div class="survey-detail-system"><div class="survey-detail-system-title"><b>Systeem ${i+1}</b><span>${esc(detailValueLabel('systemType',system.systemType))}</span></div><div class="survey-detail-list">${rows}${unitRows}</div></div>`;
@@ -1602,8 +1685,8 @@ function renderSurveyDetails(purpose,details={}){
     const extras=Object.entries(extraLabels).filter(([k])=>String(details[k]??'').trim()!=='').map(([k,l])=>`<div class="survey-detail-row"><span>${esc(l)}</span><b>${esc(detailValueLabel(k,String(details[k])))}</b></div>`).join('');
     return `<div class="survey-detail-summary"><div class="survey-detail-count"><span>Aantal complete systemen</span><b>${count}</b></div>${systemBlocks}${extras?`<div class="survey-detail-list">${extras}</div>`:''}</div>`;
   }
-  const labels={systemType:'Type systeem',indoorUnits:'Aantal binnenunits',brandPreference:'Merkvoorkeur',rooms:'Ruimtes / zones',capacityNotes:'Vermogen / bijzonderheden',indoorLocation:'Plek binnenunit(s)',outdoorLocation:'Plek buitenunit',estimatedLineLengthM:'Geschatte leidinglengte (m)',heightAccess:'Hoogte / bereikbaarheid',electricalPresent:'Elektra aanwezig / geschikt',condensatePossible:'Condensafvoer mogelijk',installationMaterials:'Materialen / voorbereiding',existingBrand:'Bestaand merk',existingModel:'Bestaand model',existingRefrigerant:'Koudemiddel',existingAge:'Leeftijd / bouwjaar',replacementReason:'Reden vervanging',desiredSystemType:'Gewenst type',desiredUnits:'Aantal binnenunits',reusePipework:'Leidingwerk hergebruiken',replacementNotes:'Aanpassingen / bijzonderheden',existingBrandModel:'Bestaand merk / model',additionalUnits:'Extra binnenunits',newRooms:'Nieuwe ruimtes',compatibilityNotes:'Compatibiliteit',customerComplaint:'Klacht klant',sinceWhen:'Sinds wanneer',errorCode:'Foutcode',stillWorking:'Werkt wel / niet',measurements:'Metingen',suspectedCause:'Vermoedelijke oorzaak',partsNeeded:'Onderdelen / materialen',followUp:'Vervolgactie',systemCondition:'Staat installatie',maintenanceNeeded:'Benodigd onderhoud',anomalies:'Aandachtspunten',customSituation:'Situatie / vraag',customRequirements:'Benodigdheden / vervolg'};
-  const rows=Object.entries(details||{}).filter(([,v])=>String(v??'').trim()!=='').map(([k,v])=>`<div class="survey-detail-row"><span>${esc(labels[k]||k)}</span><b>${esc(detailValueLabel(k,String(v)))}</b></div>`).join('');
+  const labels={systemType:'Type systeem',indoorUnits:'Aantal binnenunits',brandPreference:'Merkvoorkeur',rooms:'Ruimtes / zones',capacityNotes:'Vermogen / bijzonderheden',indoorLocation:'Plek binnenunit(s)',outdoorLocation:'Plek buitenunit',estimatedLineLengthM:'Geschatte leidinglengte (m)',heightAccess:'Hoogte / bereikbaarheid',electricalPresent:'Elektra aanwezig / geschikt',condensatePossible:'Condensafvoer mogelijk',installationMaterials:'Materialen / voorbereiding',existingBrand:'Bestaand merk',existingModel:'Bestaand model',existingRefrigerant:'Koudemiddel',existingAge:'Leeftijd / bouwjaar',replacementReason:'Reden vervanging',desiredSystemType:'Gewenst type',desiredUnits:'Aantal binnenunits',reusePipework:'Leidingwerk hergebruiken',replacementNotes:'Aanpassingen / bijzonderheden',existingBrandModel:'Bestaand merk / model',additionalUnits:'Extra binnenunits',newRooms:'Nieuwe ruimtes',compatibilityNotes:'Compatibiliteit',customerComplaint:'Klacht klant',sinceWhen:'Sinds wanneer',errorCode:'Foutcode',stillWorking:'Werkt wel / niet',measurements:'Metingen',suspectedCause:'Vermoedelijke oorzaak',partsNeeded:'Onderdelen / materialen',followUp:'Vervolgactie',systemCondition:'Staat installatie',maintenanceNeeded:'Benodigd onderhoud',anomalies:'Aandachtspunten',customSituation:'Situatie / vraag',customRequirements:'Benodigdheden / vervolg',technicalLineLengthM:'Leidinglengte (m)',technicalRefrigerantType:'Koudemiddel',technicalRefrigerantAmountKg:'Koudemiddelvulling (kg)',technicalAdditionalRefrigerantG:'Extra bijvullen (g)'};
+  const rows=Object.entries(details||{}).filter(([k,v])=>!['surveyNeeded','extraWork','systems','systemCount'].includes(k) && !Array.isArray(v) && String(v??'').trim()!=='').map(([k,v])=>`<div class="survey-detail-row"><span>${esc(labels[k]||k)}</span><b>${esc(detailValueLabel(k,String(v)))}</b></div>`).join('');
   return rows?`<div class="survey-detail-list">${rows}</div>`:'';
 }
 
@@ -1614,10 +1697,11 @@ async function surveyDetailPage(appointmentId){
   try{
     const [survey,photos]=await Promise.all([getSurvey(appointmentId),listSurveyPhotos(appointmentId)]);
     const c=customer(a.customerId)||{};
+    const surveyNeeded=survey?.details?.surveyNeeded!=='no';
     app.innerHTML=`<section class="screen survey-detail-screen">
-      <article class="card"><div class="row between"><div><p class="eyebrow">OPNAMEDOSSIER</p><h2>${esc(c.name||'Klant')}</h2><p class="muted">${fmt(a.date)} · ${a.time||'Tijd onbekend'} · ${esc(fullAddress(c))}</p></div><span class="pill">${surveyStatusLabel(survey?.status)}</span></div></article>
-      <article class="card"><div class="row between"><div><p class="eyebrow">TYPE OPNAME</p><p class="title">${surveyPurposeLabel(survey?.purpose)}</p></div></div>${renderSurveyDetails(survey?.purpose,survey?.details||{})}${survey?.scope?`<div class="notice survey-note"><b>Klantwens / omschrijving</b><br>${esc(survey.scope)}</div>`:''}${survey?.findings?`<div class="notice survey-note"><b>Constateringen</b><br>${esc(survey.findings)}</div>`:''}${survey?.technical_notes?`<div class="notice survey-note"><b>Technische notities</b><br>${esc(survey.technical_notes)}</div>`:''}</article>
-      <article class="card"><div class="row between"><p class="title">Foto's</p><span class="muted">${photos.length}</span></div><div class="survey-photo-grid">${photos.map(p=>`<a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a>`).join('') || '<p class="muted">Nog geen foto’s toegevoegd.</p>'}</div></article>
+      <article class="card"><div class="row between"><div><p class="eyebrow">OPNAMEDOSSIER</p><h2>${esc(c.name||'Klant')}</h2><p class="muted">${fmt(a.date)} · ${a.time||'Tijd onbekend'} · ${esc(fullAddress(c))}</p></div><span class="pill ${surveyNeeded?'':'survey-not-needed-pill'}">${surveyNeeded?surveyStatusLabel(survey?.status):'Niet nodig'}</span></div></article>
+      ${surveyNeeded?`<article class="card"><div class="row between"><div><p class="eyebrow">TYPE OPNAME</p><p class="title">${surveyPurposeLabel(survey?.purpose)}</p></div></div>${renderSurveyDetails(survey?.purpose,survey?.details||{})}${renderExtraWorkDetails(survey?.details||{})}${survey?.scope?`<div class="notice survey-note"><b>Klantwens / omschrijving</b><br>${esc(survey.scope)}</div>`:''}${survey?.findings?`<div class="notice survey-note"><b>Constateringen</b><br>${esc(survey.findings)}</div>`:''}${survey?.technical_notes?`<div class="notice survey-note"><b>Technische notities</b><br>${esc(survey.technical_notes)}</div>`:''}</article>`:`<article class="card survey-not-needed-card"><p class="eyebrow">OPNAME NIET NODIG</p><p class="title">Geen technisch opnamedossier nodig</p><p class="muted">Deze opname is bewust overgeslagen en verschijnt niet als open vervolgactie.</p></article>`}
+      ${surveyNeeded?`<article class="card"><div class="row between"><p class="title">Foto's</p><span class="muted">${photos.length}</span></div><div class="survey-photo-grid">${photos.map(p=>`<a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a>`).join('') || '<p class="muted">Nog geen foto’s toegevoegd.</p>'}</div></article>`:''}
       <button class="primary" onclick="nav('surveyEdit',{appointmentId:'${appointmentId}',back:route.back,appointmentBack:route.appointmentBack,date:route.date})">${survey?'✏️ Opname bijwerken':'📋 Opname invullen'}</button>
     </section>`;
   }catch(error){ app.innerHTML=`<section class="screen"><article class="card"><p class="title">Opnamedossier kan niet worden geladen</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p></article></section>`; }
@@ -1630,23 +1714,82 @@ async function surveyEditPage(appointmentId){
   try{
     const [survey,photos]=await Promise.all([getSurvey(appointmentId),listSurveyPhotos(appointmentId)]);
     const value=survey||{purpose:'nieuwe_installatie',scope:'',findings:'',technical_notes:'',status:'planned',details:{}};
+    const initialSurveyNeeded=value.details?.surveyNeeded==='no'?'no':'yes';
+    const initialExtraWork=normalizedExtraWork(value.details||{});
     app.innerHTML=`<section class="screen survey-edit-screen"><form id="surveyForm" class="form">
-      <article class="card"><p class="eyebrow">OPNAME</p><h2>Situatie vastleggen</h2><p class="muted">Kies eerst het soort opname. Optero toont daarna alleen de vragen die bij deze situatie horen.</p>
-        <div class="field"><label>Waarvoor is de opname?</label><select name="purpose">${[['nieuwe_installatie','Nieuwe installatie'],['vervanging','Vervanging'],['uitbreiding','Uitbreiding'],['storing_onderzoek','Storing / onderzoek'],['onderhoud','Onderhoud'],['anders','Anders']].map(([v,l])=>`<option value="${v}" ${value.purpose===v?'selected':''}>${l}</option>`).join('')}</select></div>
+      <article class="card survey-needed-card"><p class="eyebrow">OPNAME</p><h2>Is een opname nodig?</h2><p class="muted">Bij nee verdwijnen de opnamevragen en wordt er geen vervolgactie voor dit dossier aangemaakt.</p>
+        ${surveySelect('surveyNeeded','Opname nodig?',initialSurveyNeeded,[['yes','Ja, opname uitvoeren'],['no','Nee, geen opname nodig']])}
+        <div id="surveyNotNeededHint" class="survey-skip-hint" ${initialSurveyNeeded==='no'?'':'hidden'}>De afspraak blijft als historie bewaard. Eigenaar of planner kan de afspraak daarna desgewenst verwijderen.</div>
       </article>
-      <article class="card survey-dynamic-card"><div id="surveyDynamicFields">${dynamicSurveyFields(value.purpose,value.details||{})}</div></article>
-      <article class="card"><p class="title">Afronding opname</p>
+      <div id="surveyRequiredFields" class="survey-required-fields" ${initialSurveyNeeded==='no'?'hidden':''}>
+        <article class="card"><p class="eyebrow">DOEL OPNAME</p><h2>Situatie vastleggen</h2><p class="muted">Kies het soort opname. Optero toont daarna alleen de vragen die bij deze situatie horen.</p>
+          <div class="field"><label>Waarvoor is de opname?</label><select name="purpose">${[['nieuwe_installatie','Nieuwe installatie'],['vervanging','Vervanging'],['uitbreiding','Uitbreiding'],['storing_onderzoek','Storing / onderzoek'],['onderhoud','Onderhoud'],['anders','Anders']].map(([v,l])=>`<option value="${v}" ${value.purpose===v?'selected':''}>${l}</option>`).join('')}</select></div>
+        </article>
+        <article class="card survey-dynamic-card"><div id="surveyDynamicFields">${dynamicSurveyFields(value.purpose,value.details||{})}</div></article>
+        <article class="card survey-refrigerant-card" id="surveyTechnicalCard" ${value.purpose==='nieuwe_installatie'?'hidden':''}>${surveyTechnicalFields(value.purpose,value.details||{})}</article>
+        <article class="card survey-extra-work">
+          <div class="row between"><div><p class="eyebrow">EXTRA WERKZAAMHEDEN</p><p class="title">Werk registreren</p></div><button type="button" class="smallbtn" id="addSurveyExtraWork">+ Toevoegen</button></div>
+          <p class="muted">Registreer alleen wat is uitgevoerd of nog nodig is. Monteurs krijgen in Optero nergens bedragen of prijzen te zien.</p>
+          <div id="surveyExtraWorkList" class="survey-extra-work-list">${surveyExtraWorkFields(initialExtraWork)}</div>
+        </article>
+        <article class="card"><p class="title">Afronding opname</p>
         <div class="field"><label>Klantwens / algemene omschrijving</label><textarea name="scope" rows="3" placeholder="Wat wil de klant bereiken?">${esc(value.scope||'')}</textarea></div>
         <div class="field"><label>Constateringen medewerker</label><textarea name="findings" rows="4" placeholder="Wat is ter plaatse vastgesteld?">${esc(value.findings||'')}</textarea></div>
         <div class="field"><label>Overige technische notities</label><textarea name="technicalNotes" rows="3" placeholder="Alleen aanvullende informatie die nog niet hierboven staat">${esc(value.technical_notes||'')}</textarea></div>
         <div class="field"><label>Status</label><select name="status"><option value="planned" ${value.status==='planned'?'selected':''}>Gepland</option><option value="in_progress" ${value.status==='in_progress'?'selected':''}>Bezig</option><option value="completed" ${value.status==='completed'?'selected':''}>Afgerond</option></select></div>
       </article>
-      <article class="card"><p class="title">Foto's toevoegen</p><p class="muted">Maak foto's van de situatie, typeplaatjes, leidingroute, meterkast en andere relevante details. Maximaal 8 MB per foto.</p><input id="surveyPhotos" type="file" accept="image/*" capture="environment" multiple><div class="survey-photo-grid" style="margin-top:12px">${photos.map(p=>`<div class="survey-photo-item"><a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a><button type="button" class="smallbtn" data-photo-id="${p.id}" data-photo-path="${p.storage_path}">Verwijder</button></div>`).join('')}</div></article>
-      <button class="primary" type="submit">Opname opslaan</button>
+        <article class="card"><p class="title">Foto's toevoegen</p><p class="muted">Maak foto's van de situatie, typeplaatjes, leidingroute, meterkast en andere relevante details. Maximaal 8 MB per foto.</p><input id="surveyPhotos" type="file" accept="image/*" capture="environment" multiple><div class="survey-photo-grid" style="margin-top:12px">${photos.map(p=>`<div class="survey-photo-item"><a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a><button type="button" class="smallbtn" data-photo-id="${p.id}" data-photo-path="${p.storage_path}">Verwijder</button></div>`).join('')}</div></article>
+      </div>
+      <button class="primary" id="surveySubmit" type="submit">${initialSurveyNeeded==='no'?'Opslaan als niet nodig':'Opname opslaan'}</button>
+      ${currentRole!=='technician'?`<button class="danger survey-delete-if-not-needed" id="deleteSurveyAppointment" type="button" ${initialSurveyNeeded==='no'?'':'hidden'}>Opnameafspraak verwijderen</button>`:''}
     </form></section>`;
     document.querySelectorAll('[data-photo-id]').forEach(btn=>btn.onclick=async()=>{ if(!confirm('Foto verwijderen?')) return; try{ await deleteSurveyPhoto(btn.dataset.photoId,btn.dataset.photoPath); await surveyEditPage(appointmentId); }catch(e){alert(e.message||'Foto verwijderen mislukt.');} });
     const f=$('#surveyForm');
     const purposeField=field(f,'purpose');
+    const surveyNeededField=field(f,'surveyNeeded');
+    let extraWorkDraft=[...initialExtraWork];
+    const applySurveyNeeded=()=>{
+      const needed=surveyNeededField?.value!=='no';
+      const required=$('#surveyRequiredFields');
+      const hint=$('#surveyNotNeededHint');
+      const submit=$('#surveySubmit');
+      const deleteBtn=$('#deleteSurveyAppointment');
+      if(required) required.hidden=!needed;
+      if(hint) hint.hidden=needed;
+      if(submit) submit.textContent=needed?'Opname opslaan':'Opslaan als niet nodig';
+      if(deleteBtn) deleteBtn.hidden=needed;
+    };
+    const renderExtraWork=()=>{
+      const box=$('#surveyExtraWorkList');
+      if(!box) return;
+      box.innerHTML=surveyExtraWorkFields(extraWorkDraft);
+      box.querySelectorAll('[data-remove-extra]').forEach(btn=>btn.onclick=()=>{
+        extraWorkDraft=collectSurveyExtraWork(f);
+        extraWorkDraft.splice(Number(btn.dataset.removeExtra),1);
+        renderExtraWork();
+      });
+    };
+    const addExtra=$('#addSurveyExtraWork');
+    if(addExtra) addExtra.onclick=()=>{ extraWorkDraft=collectSurveyExtraWork(f); extraWorkDraft.push({description:'',quantity:'',note:''}); renderExtraWork(); };
+    renderExtraWork();
+    if(surveyNeededField) surveyNeededField.onchange=applySurveyNeeded;
+    applySurveyNeeded();
+    const deleteSurveyAppointment=$('#deleteSurveyAppointment');
+    if(deleteSurveyAppointment) deleteSurveyAppointment.onclick=async()=>{
+      if(surveyNeededField?.value!=='no') return;
+      if(!confirm('Deze opnameafspraak verwijderen? Het gekoppelde opnamedossier wordt ook verwijderd.')) return;
+      deleteSurveyAppointment.disabled=true;
+      try{
+        for(const photo of photos) await deleteSurveyPhoto(photo.id,photo.storage_path);
+        await deleteCloudAppointments([appointmentId]);
+        state.appointments=appointments().filter(item=>item.id!==appointmentId);
+        save();
+        nav(route.back || 'agenda');
+      }catch(error){
+        alert(`Opnameafspraak verwijderen lukt niet.\n\n${error?.message||'Onbekende fout'}`);
+        deleteSurveyAppointment.disabled=false;
+      }
+    };
     const wireSurveyDynamic=()=>{
       const box=$('#surveyDynamicFields');
       if(!box) return;
@@ -1657,9 +1800,39 @@ async function surveyEditPage(appointmentId){
       box.querySelectorAll('select[name*="unitRoom"]').forEach(sel=>sel.onchange=()=>sel.closest('.survey-unit-card')?.querySelector('.survey-room-other')?.classList.toggle('show',sel.value==='Anders...'));
       box.querySelectorAll('select[name*="unitCapacity"]').forEach(sel=>sel.onchange=()=>sel.closest('.survey-unit-card')?.querySelector('.survey-capacity-other')?.classList.toggle('show',sel.value==='Anders...'));
     };
-    purposeField.onchange=()=>{ $('#surveyDynamicFields').innerHTML=dynamicSurveyFields(purposeField.value,{}); wireSurveyDynamic(); };
+    purposeField.onchange=()=>{
+      $('#surveyDynamicFields').innerHTML=dynamicSurveyFields(purposeField.value,{});
+      const technicalCard=$('#surveyTechnicalCard');
+      if(technicalCard){ technicalCard.hidden=purposeField.value==='nieuwe_installatie'; technicalCard.innerHTML=surveyTechnicalFields(purposeField.value,{}); }
+      wireSurveyDynamic();
+    };
     wireSurveyDynamic();
-    f.onsubmit=async e=>{ e.preventDefault(); const submit=f.querySelector('button[type="submit"]'); submit.disabled=true; submit.textContent='Opslaan…'; try{ const purpose=field(f,'purpose').value; await saveSurvey(appointmentId,{purpose,scope:field(f,'scope').value.trim(),findings:field(f,'findings').value.trim(),technicalNotes:field(f,'technicalNotes').value.trim(),status:field(f,'status').value,details:collectDynamicSurveyDetails(f,purpose)}); const files=$('#surveyPhotos')?.files; if(files?.length) await uploadSurveyPhotos(appointmentId,files); nav('surveyDetail',{appointmentId,back:route.back,appointmentBack:route.appointmentBack,date:route.date}); }catch(error){ alert(`Opname opslaan lukt niet.\n\n${error?.message||'Onbekende fout'}`); submit.disabled=false; submit.textContent='Opname opslaan'; } };
+    f.onsubmit=async e=>{
+      e.preventDefault();
+      const submit=$('#surveySubmit');
+      submit.disabled=true; submit.textContent='Opslaan…';
+      try{
+        const purpose=field(f,'purpose').value;
+        const surveyNeeded=surveyNeededField?.value==='no'?'no':'yes';
+        const details=surveyNeeded==='no'
+          ? {...(survey?.details||{}),surveyNeeded:'no'}
+          : {...collectDynamicSurveyDetails(f,purpose),...collectSurveyTechnicalDetails(f,purpose),surveyNeeded:'yes',extraWork:collectSurveyExtraWork(f)};
+        await saveSurvey(appointmentId,{
+          purpose,
+          scope:field(f,'scope').value.trim(),
+          findings:field(f,'findings').value.trim(),
+          technicalNotes:field(f,'technicalNotes').value.trim(),
+          status:surveyNeeded==='no'?'completed':field(f,'status').value,
+          details
+        });
+        const files=surveyNeeded==='yes'?$('#surveyPhotos')?.files:null;
+        if(files?.length) await uploadSurveyPhotos(appointmentId,files);
+        nav('surveyDetail',{appointmentId,back:route.back,appointmentBack:route.appointmentBack,date:route.date});
+      }catch(error){
+        alert(`Opname opslaan lukt niet.\n\n${error?.message||'Onbekende fout'}`);
+        submit.disabled=false; submit.textContent=surveyNeededField?.value==='no'?'Opslaan als niet nodig':'Opname opslaan';
+      }
+    };
   }catch(error){ app.innerHTML=`<section class="screen"><article class="card"><p class="title">Opname kan niet worden geopend</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p></article></section>`; }
 }
 

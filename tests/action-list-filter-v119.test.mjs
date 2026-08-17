@@ -7,9 +7,9 @@ const config = fs.readFileSync(new URL('../src/config.js', import.meta.url), 'ut
 const sw = fs.readFileSync(new URL('../public/service-worker.js', import.meta.url), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
-assert.equal(pkg.version, '0.11.9');
-assert.match(config, /APP_VERSION = '0\.11\.9 Actielijstfilter'/);
-assert.match(sw, /CACHE_NAME = 'optero-v0\.11\.9'/);
+assert.equal(pkg.version, '0.12.0');
+assert.match(config, /APP_VERSION = '0.12.0 Opname 2.0'/);
+assert.match(sw, /CACHE_NAME = 'optero-v0.12.0'/);
 assert.match(app, /id=\"maintenanceFilter\"/);
 assert.match(app, /Toon onderhoudsacties/);
 assert.match(app, /maintenanceFilter\.onchange=\(\)=>draw\(maintenanceFilter\.value\)/);

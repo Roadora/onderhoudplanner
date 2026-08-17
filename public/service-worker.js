@@ -1,4 +1,4 @@
-const CACHE_NAME = 'optero-v0.11.9';
+const CACHE_NAME = 'optero-v0.12.0';
 const APP_SHELL = ['/', '/index.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {

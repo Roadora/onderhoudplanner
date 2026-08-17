@@ -1324,9 +1324,9 @@ async function newAppointment(){
           <div class="field"><label>Memo klant</label><textarea name="newMemo" rows="2" placeholder="Interne notitie"></textarea></div>
         </div>
         <div class="field system-picker-wrap">
-          <label>Systeem / installatie <span class="optional">optioneel</span></label>
+          <label>Bestaande installatie <span class="optional">optioneel</span></label>
           <select name="systemId">${systemOptionsFor(customerId,systemId)}</select>
-          <p class="helper">Koppel het systeem zodat de monteur direct de juiste installatiegegevens bij de klus ziet.</p>
+          <p class="helper">Kies alleen bij onderhoud, storing of controle de bestaande installatie waarop de afspraak betrekking heeft.</p>
         </div>
         <div class="two planning-date-time">
           <div class="field"><label>Datum</label><input name="date" type="date" value="${dateValue}" required></div>
@@ -1342,6 +1342,14 @@ async function newAppointment(){
 
   const f=$('#genericAppointmentForm');
   bindAssignmentSelection(f);
+  const appointmentUsesExistingSystem=()=>['onderhoud','storing','controle'].includes(field(f,'type').value);
+  const toggleSystemPicker=()=>{
+    const wrap=f.querySelector('.system-picker-wrap');
+    const sys=field(f,'systemId');
+    const show=appointmentUsesExistingSystem();
+    if(wrap) wrap.hidden=!show;
+    if(sys && !show) sys.value='';
+  };
   const toggleNewCustomerFields=()=>{
     const wrap=f.querySelector('.new-customer-fields');
     const isNew=field(f,'customerId').value==='__new__';
@@ -1349,8 +1357,10 @@ async function newAppointment(){
     const sys=field(f,'systemId');
     if(sys && !isNew) sys.innerHTML=systemOptionsFor(field(f,'customerId').value,sys.value);
     if(sys && isNew) sys.innerHTML='<option value="">Eerst klant opslaan</option>';
+    toggleSystemPicker();
   };
   field(f,'customerId').onchange=toggleNewCustomerFields;
+  field(f,'type').onchange=toggleSystemPicker;
   toggleNewCustomerFields();
 
   f.onsubmit=async (e)=>{
@@ -1373,10 +1383,11 @@ async function newAppointment(){
         state.customers.push(newCustomer);
         appointmentCustomerId=newCustomer.id;
       }
-      const selectedSystemId=field(f,'systemId')?.value || null;
+      const appointmentType=field(f,'type').value;
+      const selectedSystemId=['onderhoud','storing','controle'].includes(appointmentType) ? (field(f,'systemId')?.value || null) : null;
       let savedAppointmentId='';
       if(existing){
-        existing.type=field(f,'type').value;
+        existing.type=appointmentType;
         existing.customerId=appointmentCustomerId;
         existing.systemId=selectedSystemId;
         existing.date=field(f,'date').value;
@@ -1386,7 +1397,7 @@ async function newAppointment(){
       }else{
         const created={
           id:uid(),
-          type:field(f,'type').value,
+          type:appointmentType,
           customerId:appointmentCustomerId,
           systemId:selectedSystemId,
           date:field(f,'date').value,
@@ -1397,7 +1408,7 @@ async function newAppointment(){
         savedAppointmentId=created.id;
       }
       const selectedSystem=selectedSystemId ? systemById(selectedSystemId) : null;
-      if(selectedSystem && field(f,'type').value==='onderhoud') selectedSystem.contactStatus='scheduled';
+      if(selectedSystem && appointmentType==='onderhoud') selectedSystem.contactStatus='scheduled';
       save();
       if(!(await persistAppointmentForm(savedAppointmentId, f))) return;
       if(routedWorkOrder){

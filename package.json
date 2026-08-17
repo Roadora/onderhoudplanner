@@ -1,13 +1,13 @@
 {
   "name": "optero",
   "private": true,
-  "version": "0.12.4",
+  "version": "0.12.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/cloud-mapper.test.mjs && node tests/team-onboarding.test.mjs && node tests/role-hardening.test.mjs && node tests/work-assignment-isolation.test.mjs && node tests/transactional-cloud-v100.test.mjs && node tests/planning-flow-v101.test.mjs && node tests/persistence-hardening-v102.test.mjs && node tests/appointment-verification-v103.test.mjs && node tests/surveys-v110.test.mjs && node tests/surveys-v112.test.mjs && node tests/surveys-v113.test.mjs && node tests/surveys-v114.test.mjs && node tests/dashboard-followup-v117.test.mjs && node tests/survey-back-navigation-v118.test.mjs && node tests/action-list-filter-v119.test.mjs && node tests/survey-v120.test.mjs && node tests/survey-edit-button-v121.test.mjs && node tests/workflow-v122.test.mjs && node tests/survey-layout-v123.test.mjs && node tests/survey-camera-v124.test.mjs"
+    "test": "node tests/cloud-mapper.test.mjs && node tests/team-onboarding.test.mjs && node tests/role-hardening.test.mjs && node tests/work-assignment-isolation.test.mjs && node tests/transactional-cloud-v100.test.mjs && node tests/planning-flow-v101.test.mjs && node tests/persistence-hardening-v102.test.mjs && node tests/appointment-verification-v103.test.mjs && node tests/surveys-v110.test.mjs && node tests/surveys-v112.test.mjs && node tests/surveys-v113.test.mjs && node tests/surveys-v114.test.mjs && node tests/dashboard-followup-v117.test.mjs && node tests/survey-back-navigation-v118.test.mjs && node tests/action-list-filter-v119.test.mjs && node tests/survey-v120.test.mjs && node tests/survey-edit-button-v121.test.mjs && node tests/workflow-v122.test.mjs && node tests/survey-layout-v123.test.mjs && node tests/survey-camera-v124.test.mjs && node tests/quote-pricebook-v125.test.mjs"
   },
   "devDependencies": {
     "vite": "8.1.4"

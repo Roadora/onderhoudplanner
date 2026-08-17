@@ -40,8 +40,8 @@ assert.match(css, /\.survey-photo-actions\{/);
 assert.match(css, /\.survey-photo-input\{position:absolute!important/);
 assert.match(css, /\.survey-photo-status\.show\{display:block\}/);
 
-assert.equal(pkg.version, '0.12.4');
-assert.match(config, /0\.12\.4 Directe opnamefoto’s/);
-assert.match(sw, /CACHE_NAME = 'optero-v0\.12\.4'/);
+assert.match(pkg.version, /^0\.12\.\d+$/);
+assert.ok(config.includes(`APP_VERSION = '${pkg.version} `), 'Zichtbare appversie moet gelijk lopen met package.json');
+assert.ok(sw.includes(`CACHE_NAME = 'optero-v${pkg.version}'`), 'PWA-cacheversie moet gelijk lopen met package.json');
 
 console.log('survey-camera-v124: ok');

@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.12.4 Directe opnamefoto’s';
+export const APP_VERSION = '0.12.5 Slimme offertes';
 
 // Bewust gelijk aan v0.7, zodat bestaande lokale data eenmalig aan het eerste
 // bedrijfsaccount op dit apparaat gekoppeld kan worden.

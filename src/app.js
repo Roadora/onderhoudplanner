@@ -5,6 +5,7 @@ import { listTeamMembers, listPendingInvitations, inviteTeamMember, getAppointme
 import { flushCloudSync, verifyCloudAppointment, deleteCloudAppointments, deleteCloudInstallation, deleteCloudCustomer, clearCloudOperationalData } from './data/cloud-repository.js';
 import { listSurveys, getSurvey, saveSurvey, listSurveyPhotos, uploadSurveyPhotos, deleteSurveyPhoto } from './surveys/survey-service.js';
 import { getQuoteBySurvey, getQuote, saveQuote } from './quotes/quote-service.js';
+import { listPriceBook, savePriceBookItem, deletePriceBookItem } from './quotes/price-book-service.js';
 import { listWorkOrders, getWorkOrder, getWorkOrderByAppointment, getWorkOrderByQuote, saveWorkOrder, linkWorkOrderAppointment, updateWorkOrderExecution } from './workorders/workorder-service.js';
 
 const $ = (s) => document.querySelector(s);
@@ -283,7 +284,7 @@ function contactStatusSelect(s){
 }
 
 const ROLE_ROUTE_ACCESS = Object.freeze({
-  owner: new Set(['dashboard','customers','agenda','more','settings','account','team','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit','quote','workOrders','workOrderDetail','workOrderEdit','workOrderExecute']),
+  owner: new Set(['dashboard','customers','agenda','more','settings','priceBook','account','team','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit','quote','workOrders','workOrderDetail','workOrderEdit','workOrderExecute']),
   planner: new Set(['dashboard','customers','agenda','more','account','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit','workOrders','workOrderDetail','workOrderEdit','workOrderExecute']),
   technician: new Set(['myDay','account','appointmentDetail','surveyDetail','surveyEdit','workOrderDetail','workOrderExecute']),
   viewer: new Set(['account'])
@@ -317,7 +318,7 @@ function render(){
   backBtn.onclick = () => navBack();
 
   const titles = {
-    dashboard:'Home', customers:'Klanten', agenda:'Planning', more:'Meer', settings:'Instellingen', account:currentRole === 'technician' ? 'Mijn account' : 'Bedrijfsaccount', team:'Medewerkers', myDay:'Mijn dag',
+    dashboard:'Home', customers:'Klanten', agenda:'Planning', more:'Meer', settings:'Instellingen', priceBook:'Prijzenboek', account:currentRole === 'technician' ? 'Mijn account' : 'Bedrijfsaccount', team:'Medewerkers', myDay:'Mijn dag',
     new:'Nieuwe installatie', detail:'Klantdetail', editCustomer:'Klant bewerken',
     editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', newAppointment:'Afspraak inplannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails', notifications:'Actielijst', surveyDetail:'Opnamedossier', surveyEdit:'Opname invullen', quote:'Offerte', workOrders:'Werkorders', workOrderDetail:'Werkorder', workOrderEdit:'Werkorder voorbereiden', workOrderExecute:'Werkorder uitvoeren'
   };
@@ -328,6 +329,7 @@ function render(){
   if(route.name==='agenda') agenda();
   if(route.name==='more') morePage();
   if(route.name==='settings') settings();
+  if(route.name==='priceBook') void priceBookPage();
   if(route.name==='team') teamPage();
   if(route.name==='myDay') myDayPage();
   if(route.name==='account') accountPage();
@@ -376,6 +378,10 @@ function navBack(){
   }
   if(route.name==='workOrders') return nav('more');
   if(route.name==='appointmentDetail') return nav(currentRole==='technician' ? 'myDay' : 'dayPlan',{date:route.date || todayKey(),back:'agenda'});
+  if(route.name==='priceBook'){
+    if(route.back==='quote' && route.appointmentId) return nav('quote',{appointmentId:route.appointmentId,quoteId:route.quoteId||null,back:'appointmentDetail'});
+    return nav(route.back || 'more');
+  }
   if(route.name==='notifications' || route.name==='account' || route.name==='team' || route.name==='settings') return nav(currentRole === 'technician' ? 'myDay' : 'dashboard');
   if(route.name==='detail') return nav(route.back || 'dashboard');
   if(route.name==='editCustomer') return nav('detail',{customerId:route.customerId,back:'customers'});
@@ -598,7 +604,7 @@ function morePage(){
       ${owner?`<button onclick="nav('team')"><span>👥</span><b>Medewerkers</b><small>Team en rollen</small></button>`:''}
       <button onclick="nav('account')"><span>🏢</span><b>Bedrijfsaccount</b><small>Account en organisatie</small></button>
     </div>
-    ${owner?`<div class="home-section-title">Beheer</div><article class="card more-list"><button onclick="nav('settings')"><span>⚙️</span><span class="grow"><b>Instellingen</b><small>Bedrijfsprofiel en onderhoud</small></span><span>›</span></button><button type="button" disabled><span>📊</span><span class="grow"><b>Overzicht & rapportages</b><small>Wordt in een volgende stap uitgebreid</small></span><span class="coming-soon">Binnenkort</span></button><button type="button" disabled><span>🔗</span><span class="grow"><b>Integraties</b><small>Bijv. e-Boekhouden</small></span><span class="coming-soon">Binnenkort</span></button></article>`:''}
+    ${owner?`<div class="home-section-title">Beheer</div><article class="card more-list"><button onclick="nav('settings')"><span>⚙️</span><span class="grow"><b>Instellingen</b><small>Bedrijfsprofiel en onderhoud</small></span><span>›</span></button><button onclick="nav('priceBook',{back:'more'})"><span>💶</span><span class="grow"><b>Prijzenboek</b><small>Standaardprijzen voor offertes</small></span><span>›</span></button><button type="button" disabled><span>📊</span><span class="grow"><b>Overzicht & rapportages</b><small>Wordt in een volgende stap uitgebreid</small></span><span class="coming-soon">Binnenkort</span></button><button type="button" disabled><span>🔗</span><span class="grow"><b>Integraties</b><small>Bijv. e-Boekhouden</small></span><span class="coming-soon">Binnenkort</span></button></article>`:''}
   </section>`;
 }
 async function notificationsPage(){
@@ -1874,22 +1880,163 @@ function quoteStatusClass(value){ return ({draft:'neutral',sent:'info',accepted:
 function workOrderStatusLabel(value){ return ({concept:'Concept',ready:'Klaar om in te plannen',scheduled:'Ingepland',in_progress:'In uitvoering',completed:'Afgerond',cancelled:'Geannuleerd'})[value] || 'Concept'; }
 function workOrderStatusClass(value){ return ({concept:'neutral',ready:'info',scheduled:'active',in_progress:'paused',completed:'done',cancelled:'stopped'})[value] || 'neutral'; }
 function money(value){ return new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR'}).format(Number(value)||0); }
-function quoteRows(items=[]){
-  const normalized=items.length?items:[{description:'Plaatsing / werkzaamheden',quantity:1,unitPrice:0}];
-  return normalized.map((item,index)=>`<div class="quote-row" data-quote-row="${index}">
-    <div class="quote-row-head"><b>Regel ${index+1}</b>${normalized.length>1?`<button class="smallbtn danger-lite" type="button" data-remove-quote="${index}">Verwijder</button>`:''}</div>
-    ${surveyField(`quoteDescription${index+1}`,'Omschrijving',item.description||'','Bijv. leveren en plaatsen airco')}
-    <div class="form-grid-2">${surveyField(`quoteQuantity${index+1}`,'Aantal',item.quantity??1,'1','number')}${surveyField(`quoteUnitPrice${index+1}`,'Prijs per stuk (€)',item.unitPrice??0,'0','number')}</div>
-  </div>`).join('');
+function normalizedPriceText(value){ return String(value||'').trim().toLowerCase(); }
+function surveySystemIdentity(system={}){
+  const type=system.systemType||'single_split';
+  const brand=system.brandPreference==='Anders...'?system.brandOther:(system.brandPreference||'');
+  const model=system.modelPreference==='Anders...'?system.modelOther:(system.modelPreference||'');
+  return {systemType:type,brand:String(brand||'').trim(),model:String(model||'').trim()};
 }
-function collectQuoteRows(form){
-  return [...form.querySelectorAll('[data-quote-row]')].map((row,index)=>({
-    description:field(form,`quoteDescription${index+1}`)?.value.trim()||'',
-    quantity:Math.max(0,Number(field(form,`quoteQuantity${index+1}`)?.value||0)),
-    unitPrice:Math.max(0,Number(field(form,`quoteUnitPrice${index+1}`)?.value||0))
-  })).filter(item=>item.description || item.quantity || item.unitPrice);
+function priceBookMatchSystem(system={},priceBook=[]){
+  const identity=surveySystemIdentity(system);
+  const candidates=priceBook.filter(item=>item.active!==false && item.category==='system').map(item=>{
+    if(item.system_type && item.system_type!==identity.systemType) return null;
+    if(item.brand && normalizedPriceText(item.brand)!==normalizedPriceText(identity.brand)) return null;
+    if(item.model && normalizedPriceText(item.model)!==normalizedPriceText(identity.model)) return null;
+    let score=0;
+    if(item.system_type) score+=8;
+    if(item.brand) score+=4;
+    if(item.model) score+=2;
+    return {item,score};
+  }).filter(Boolean).sort((a,b)=>b.score-a.score || new Date(b.item.updated_at||0)-new Date(a.item.updated_at||0));
+  return candidates[0]?.item||null;
+}
+function quoteSystemSummary(system={}){
+  const identity=surveySystemIdentity(system);
+  const unitCount=surveyInstallUnitCount(identity.systemType,system.unitCount);
+  const units=normalizedSurveyInstallUnits(system,unitCount);
+  const unitSummary=units.map(unit=>[unit.room,unit.capacityKw?`${String(unit.capacityKw).replace('.',',')} kW`:null].filter(Boolean).join(' · ')).filter(Boolean).join(' | ');
+  return [
+    `${unitCount} binnenunit${unitCount===1?'':'s'}`,
+    unitSummary
+  ].filter(Boolean).join(' · ');
+}
+function quoteSystemLabel(system={},index=0){
+  const identity=surveySystemIdentity(system);
+  const parts=[`Systeem ${index+1}`,detailValueLabel('systemType',identity.systemType),identity.brand,identity.model].filter(Boolean);
+  return parts.join(' · ');
+}
+function quoteItemsFromSurvey(survey,priceBook=[]){
+  const details=survey?.details||{};
+  if(survey?.purpose==='nieuwe_installatie'){
+    const count=surveySystemCount(details);
+    const systems=normalizedSurveySystems(details,count);
+    return systems.map((system,index)=>{
+      const identity=surveySystemIdentity(system);
+      const match=priceBookMatchSystem(system,priceBook);
+      const suggested=Number(match?.unit_price)||0;
+      return {
+        kind:'system',systemIndex:index+1,systemType:identity.systemType,brand:identity.brand,model:identity.model,
+        unitCount:surveyInstallUnitCount(identity.systemType,system.unitCount),summary:quoteSystemSummary(system),
+        description:quoteSystemLabel(system,index),quantity:1,unit:'systeem',unitPrice:suggested,
+        priceBookId:match?.id||null,suggestedPrice:suggested,priceSource:match?'pricebook':'none'
+      };
+    });
+  }
+  if(survey?.purpose==='vervanging'){
+    const system={systemType:details.desiredSystemType||'single_split',unitCount:Number(details.desiredUnits)||1,brandPreference:details.brandPreference||'',modelPreference:''};
+    const identity=surveySystemIdentity(system); const match=priceBookMatchSystem(system,priceBook); const suggested=Number(match?.unit_price)||0;
+    return [{kind:'system',systemIndex:1,systemType:identity.systemType,brand:identity.brand,model:identity.model,unitCount:Number(details.desiredUnits)||1,summary:`${Number(details.desiredUnits)||1} binnenunit${Number(details.desiredUnits)===1?'':'s'}`,description:`Systeem 1 · ${detailValueLabel('systemType',identity.systemType)}${identity.brand?` · ${identity.brand}`:''}`,quantity:1,unit:'systeem',unitPrice:suggested,priceBookId:match?.id||null,suggestedPrice:suggested,priceSource:match?'pricebook':'none'}];
+  }
+  return [{kind:'extra',description:surveyPurposeLabel(survey?.purpose||'anders'),quantity:1,unit:'stuk',unitPrice:0,priceBookId:null,suggestedPrice:0,priceSource:'none'}];
+}
+function quotePriceSourceLabel(item={}){
+  if(item.priceSource==='manual') return 'Handmatig aangepast';
+  if(item.priceBookId) return 'Standaardprijs uit prijzenboek';
+  return 'Geen standaardprijs gevonden';
+}
+function quoteRows(items=[]){
+  return items.map((item,index)=>{
+    const system=item.kind==='system';
+    const sourceClass=item.priceSource==='manual'?'manual':item.priceBookId?'book':'empty';
+    return `<div class="quote-row ${system?'quote-system-row':'quote-extra-row'}" data-quote-row="${index}">
+      <div class="quote-row-head"><div>${system?`<span class="quote-row-kicker">SYSTEEM ${item.systemIndex||index+1}</span>`:''}<b>${system?'Compleet systeem':`Extra regel ${index+1}`}</b></div>${!system?`<button class="smallbtn danger-lite" type="button" data-remove-quote="${index}">Verwijder</button>`:''}</div>
+      ${system && item.summary?`<div class="quote-system-summary"><span>${esc(detailValueLabel('systemType',item.systemType||'single_split'))}</span><p>${esc(item.summary)}</p></div>`:''}
+      ${surveyField(`quoteDescription${index+1}`,'Omschrijving',item.description||'','Bijv. leveren en plaatsen airco')}
+      ${system
+        ? surveyField(`quoteUnitPrice${index+1}`,'Prijs compleet systeem (€)',item.unitPrice??0,'0','number')+`<input type="hidden" name="quoteQuantity${index+1}" value="1">`
+        : `<div class="form-grid-2">${surveyField(`quoteQuantity${index+1}`,'Aantal',item.quantity??1,'1','number')}${surveyField(`quoteUnitPrice${index+1}`,'Eenheidsprijs (€)',item.unitPrice??0,'0','number')}</div>`}
+      <div class="quote-price-source ${sourceClass}"><span data-price-source>${esc(quotePriceSourceLabel(item))}</span><button class="smallbtn" type="button" data-save-price="${index}" ${(Number(item.unitPrice)||0)>0?'':'disabled'}>${item.priceBookId?'Standaardprijs bijwerken':'Opslaan als standaardprijs'}</button></div>
+    </div>`;
+  }).join('');
+}
+function collectQuoteRows(form,baseItems=[]){
+  return [...form.querySelectorAll('[data-quote-row]')].map((row,index)=>{
+    const base={...(baseItems[index]||{})};
+    return {...base,
+      description:field(form,`quoteDescription${index+1}`)?.value.trim()||'',
+      quantity:Math.max(0,Number(field(form,`quoteQuantity${index+1}`)?.value||0)),
+      unitPrice:Math.max(0,Number(field(form,`quoteUnitPrice${index+1}`)?.value||0))
+    };
+  }).filter(item=>item.description || item.quantity || item.unitPrice);
 }
 function quoteTotal(items=[]){ return items.reduce((sum,item)=>sum+(Number(item.quantity)||0)*(Number(item.unitPrice)||0),0); }
+function priceBookSystemTypeOptions(value='single_split'){
+  return surveySelect('systemType','Type systeem',value,[['single_split','Single split'],['multi_split','Multi split'],['triple_split','Triple split'],['warmtepomp','Warmtepomp'],['anders','Anders']]);
+}
+function priceBookUnitOptions(value='stuk'){
+  return surveySelect('unit','Eenheid',value,[['systeem','Systeem'],['stuk','Stuk'],['meter','Meter'],['uur','Uur'],['vast','Vast bedrag']]);
+}
+function priceBookItemSubtitle(item){
+  if(item.category==='system') return [detailValueLabel('systemType',item.system_type||'single_split'),item.brand,item.model].filter(Boolean).join(' · ');
+  return `Per ${item.unit||'stuk'}`;
+}
+async function priceBookPage(){
+  if(currentRole!=='owner') return nav(defaultRouteForRole());
+  app.innerHTML='<section class="screen"><article class="card"><p class="title">Prijzenboek laden…</p></article></section>';
+  try{
+    let items=await listPriceBook();
+    const renderPage=(editing=null)=>{
+      const value=editing||{id:'',category:'system',label:'',system_type:'single_split',brand:'',model:'',unit:'systeem',unit_price:0,active:true};
+      app.innerHTML=`<section class="screen price-book-screen">
+        <article class="card"><p class="eyebrow">ALLEEN EIGENAAR</p><p class="title">Prijzenboek</p><p class="muted">Optero stelt deze bedragen voor op nieuwe offertes. Iedere prijs blijft per offerte handmatig aanpasbaar.</p></article>
+        <form id="priceBookForm" class="form"><article class="card price-book-form-card"><div class="row between"><p class="title">${value.id?'Standaardprijs wijzigen':'Standaardprijs toevoegen'}</p>${value.id?'<button type="button" class="link" id="cancelPriceEdit">Annuleren</button>':''}</div>
+          <input type="hidden" name="itemId" value="${esc(value.id||'')}">
+          ${surveySelect('category','Soort prijs',value.category,[['system','Compleet systeem'],['extra','Extra product / werkzaamheid']])}
+          ${surveyField('label','Omschrijving',value.label||'','Bijv. Daikin Stylish 3,5 kW of Extra leiding')}
+          <div id="priceBookSystemFields" ${value.category==='system'?'':'hidden'}>${priceBookSystemTypeOptions(value.system_type||'single_split')}<div class="form-grid-2">${surveyField('brand','Merk (optioneel)',value.brand||'','Bijv. Daikin')}${surveyField('model','Model / serie (optioneel)',value.model||'','Bijv. Stylish')}</div></div>
+          <div id="priceBookUnitField" ${value.category==='extra'?'':'hidden'}>${priceBookUnitOptions(value.unit||'stuk')}</div>
+          ${surveyField('unitPrice','Standaardprijs (€)',value.unit_price??0,'0','number')}
+          <p class="helper">Deze prijs is alleen een voorstel. Bij iedere offerte kan de eigenaar hem direct overschrijven zonder het prijzenboek te wijzigen.</p>
+          <button class="primary" type="submit">${value.id?'Wijziging opslaan':'Standaardprijs opslaan'}</button>
+        </article></form>
+        <div class="home-section-title">Standaardprijzen (${items.length})</div>
+        <div class="price-book-list">${items.length?items.map(item=>`<article class="card price-book-item"><div class="row between"><div><p class="title">${esc(item.label)}</p><p class="muted">${esc(priceBookItemSubtitle(item))}</p></div><b class="price-book-amount">${money(item.unit_price)}</b></div><div class="price-book-actions"><button type="button" class="secondary" data-edit-price="${item.id}">Wijzigen</button><button type="button" class="danger" data-delete-price="${item.id}">Verwijderen</button></div></article>`).join(''):'<article class="card empty">Nog geen standaardprijzen. Je kunt ook vanuit een offerte een handmatig gekozen prijs als standaard opslaan.</article>'}</div>
+      </section>`;
+      const f=$('#priceBookForm');
+      const category=field(f,'category');
+      const applyCategory=()=>{
+        const system=category.value==='system';
+        $('#priceBookSystemFields').hidden=!system;
+        $('#priceBookUnitField').hidden=system;
+      };
+      category.onchange=applyCategory; applyCategory();
+      const cancel=$('#cancelPriceEdit'); if(cancel) cancel.onclick=()=>renderPage();
+      f.onsubmit=async e=>{
+        e.preventDefault();
+        const submit=f.querySelector('button[type="submit"]'); submit.disabled=true; submit.textContent='Opslaan…';
+        try{
+          const isSystem=category.value==='system';
+          await savePriceBookItem({
+            id:field(f,'itemId').value||null,category:category.value,label:field(f,'label').value.trim(),
+            systemType:isSystem?field(f,'systemType').value:'',brand:isSystem?field(f,'brand').value.trim():'',model:isSystem?field(f,'model').value.trim():'',
+            unit:isSystem?'systeem':field(f,'unit').value,unitPrice:Number(field(f,'unitPrice').value)||0,active:true
+          });
+          items=await listPriceBook(); renderPage();
+        }catch(error){ alert(`Standaardprijs opslaan lukt niet.\n\n${error?.message||'Onbekende fout'}`); submit.disabled=false; submit.textContent=value.id?'Wijziging opslaan':'Standaardprijs opslaan'; }
+      };
+      document.querySelectorAll('[data-edit-price]').forEach(btn=>btn.onclick=()=>renderPage(items.find(item=>String(item.id)===String(btn.dataset.editPrice))||null));
+      document.querySelectorAll('[data-delete-price]').forEach(btn=>btn.onclick=async()=>{
+        if(!confirm('Deze standaardprijs uit het prijzenboek verwijderen?')) return;
+        try{ await deletePriceBookItem(btn.dataset.deletePrice); items=await listPriceBook(); renderPage(); }
+        catch(error){ alert(`Standaardprijs verwijderen lukt niet.\n\n${error?.message||'Onbekende fout'}`); }
+      });
+    };
+    renderPage();
+  }catch(error){
+    app.innerHTML=`<section class="screen"><article class="card"><p class="title">Prijzenboek nog niet beschikbaar</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p><p class="helper">Voer de meegeleverde Supabase-migratie price_book_v125.sql één keer uit.</p></article></section>`;
+  }
+}
 
 async function quotePage(appointmentId,quoteId=null){
   if(currentRole!=='owner') return nav(defaultRouteForRole());
@@ -1897,36 +2044,82 @@ async function quotePage(appointmentId,quoteId=null){
   if(!appointment) return nav('dashboard');
   app.innerHTML='<section class="screen"><article class="card"><p class="title">Offerte laden…</p></article></section>';
   try{
-    const [survey,loadedQuote]=await Promise.all([getSurvey(appointmentId),quoteId?getQuote(quoteId):getQuoteBySurvey(appointmentId)]);
+    const [survey,loadedQuote,loadedPriceBook]=await Promise.all([
+      getSurvey(appointmentId),
+      quoteId?getQuote(quoteId):getQuoteBySurvey(appointmentId),
+      listPriceBook().catch(()=>[])
+    ]);
     const value=loadedQuote||{id:null,status:'draft',items:[],notes:''};
     const c=customer(appointment.customerId)||{};
-    let draftItems=Array.isArray(value.items)?value.items:[];
+    let priceBookEntries=Array.isArray(loadedPriceBook)?loadedPriceBook:[];
+    let draftItems=Array.isArray(value.items)?value.items.map(item=>({...item})):[];
+    const legacyPlaceholder=draftItems.length===1 && draftItems[0]?.description==='Plaatsing / werkzaamheden' && Number(draftItems[0]?.unitPrice||0)===0;
+    if((!value.id && !draftItems.length) || legacyPlaceholder) draftItems=quoteItemsFromSurvey(survey,priceBookEntries);
+    if(!draftItems.length) draftItems=[{kind:'extra',description:'Plaatsing / werkzaamheden',quantity:1,unit:'stuk',unitPrice:0,priceBookId:null,suggestedPrice:0,priceSource:'none'}];
     let workOrder=value.id?await getWorkOrderByQuote(value.id).catch(()=>null):null;
+    const extraBookOptions=()=>priceBookEntries.filter(item=>item.active!==false&&item.category==='extra');
     app.innerHTML=`<section class="screen quote-screen"><form id="quoteForm" class="form">
       <article class="card"><p class="eyebrow">OFFERTE</p><h2>${esc(c.name||'Klant')}</h2><p class="muted">Gebaseerd op de afgeronde opname van ${fmt(appointment.date)}.</p><div class="row between" style="margin-top:12px"><span class="status-badge ${quoteStatusClass(value.status)}">${quoteStatusLabel(value.status)}</span>${value.id?`<span class="muted">${money(value.total_amount||quoteTotal(draftItems))}</span>`:''}</div></article>
-      <article class="card"><p class="title">Offerteregels</p><p class="muted">Bedragen zijn uitsluitend zichtbaar voor de eigenaar. Ze worden nooit meegestuurd naar het monteursportaal.</p><div id="quoteRows">${quoteRows(draftItems)}</div><button class="secondary" type="button" id="addQuoteRow" style="width:100%">+ Offert regel toevoegen</button></article>
+      <article class="card"><div class="row between quote-card-heading"><div><p class="title">Offerteregels</p><p class="muted">Per compleet systeem maakt Optero automatisch één hoofdregel.</p></div><button class="smallbtn" type="button" id="openPriceBook">Prijzenboek</button></div><div id="quoteRows">${quoteRows(draftItems)}</div><div class="quote-add-box"><div class="field"><label>Extra uit prijzenboek</label><select id="quotePriceBookExtra"><option value="">Kies een extra regel…</option>${extraBookOptions().map(item=>`<option value="${item.id}">${esc(item.label)} · ${money(item.unit_price)} / ${esc(item.unit||'stuk')}</option>`).join('')}</select></div><button class="secondary" type="button" id="addQuoteBookRow">+ Toevoegen</button></div><button class="secondary" type="button" id="addQuoteRow" style="width:100%">+ Handmatige extra regel</button><p class="helper quote-owner-only">Bedragen zijn uitsluitend zichtbaar voor de eigenaar en worden nooit meegestuurd naar het monteursportaal.</p></article>
       <article class="card"><div class="field"><label>Interne / offerte notitie</label><textarea name="notes" rows="4" placeholder="Bijzonderheden voor de offerte">${esc(value.notes||'')}</textarea></div>${surveySelect('status','Offertestatus',value.status,[['draft','Concept'],['sent','Verstuurd'],['accepted','Akkoord'],['rejected','Afgewezen']])}<div class="quote-total-box"><span>Totaal</span><b id="quoteTotal">${money(quoteTotal(draftItems))}</b></div></article>
       <button class="primary" type="submit" id="quoteSubmit">Offerte opslaan</button>
       ${workOrder?`<button class="secondary" type="button" id="openQuoteWorkOrder" style="width:100%">🧾 Open werkorder · ${workOrderStatusLabel(workOrder.status)}</button>`:''}
     </form></section>`;
     const f=$('#quoteForm');
+    const updateTotal=()=>{ const total=$('#quoteTotal'); if(total) total.textContent=money(quoteTotal(collectQuoteRows(f,draftItems))); };
+    const updatePriceState=(index,row,input)=>{
+      const item=draftItems[index]; if(!item) return;
+      const price=Math.max(0,Number(input.value)||0);
+      const suggested=Number(item.suggestedPrice)||0;
+      item.unitPrice=price;
+      item.priceSource=(item.priceBookId && Math.abs(price-suggested)<0.005)?'pricebook':(price>0?'manual':'none');
+      const source=row.querySelector('[data-price-source]'); if(source) source.textContent=quotePriceSourceLabel(item);
+      const holder=row.querySelector('.quote-price-source'); if(holder) holder.className=`quote-price-source ${item.priceSource==='manual'?'manual':item.priceBookId?'book':'empty'}`;
+      const saveBtn=row.querySelector('[data-save-price]'); if(saveBtn){ saveBtn.disabled=price<=0; saveBtn.textContent=item.priceBookId?'Standaardprijs bijwerken':'Opslaan als standaardprijs'; }
+      updateTotal();
+    };
+    const saveRowAsStandard=async index=>{
+      draftItems=collectQuoteRows(f,draftItems);
+      const item=draftItems[index]; if(!item || Number(item.unitPrice)<=0) return;
+      try{
+        const system=item.kind==='system';
+        const id=await savePriceBookItem({
+          id:item.priceBookId||null,category:system?'system':'extra',label:system?[detailValueLabel('systemType',item.systemType||'single_split'),item.brand,item.model].filter(Boolean).join(' · '):item.description,
+          systemType:system?(item.systemType||'single_split'):'',brand:system?(item.brand||''):'',model:system?(item.model||''):'',unit:system?'systeem':(item.unit||'stuk'),unitPrice:item.unitPrice,active:true
+        });
+        priceBookEntries=await listPriceBook();
+        item.priceBookId=id; item.suggestedPrice=Number(item.unitPrice)||0; item.priceSource='pricebook';
+        redraw(); updateTotal();
+      }catch(error){ alert(`Standaardprijs opslaan lukt niet.\n\n${error?.message||'Onbekende fout'}`); }
+    };
     const redraw=()=>{
       const box=$('#quoteRows'); if(!box) return;
       box.innerHTML=quoteRows(draftItems);
-      box.querySelectorAll('[data-remove-quote]').forEach(btn=>btn.onclick=()=>{ draftItems=collectQuoteRows(f); draftItems.splice(Number(btn.dataset.removeQuote),1); redraw(); updateTotal(); });
-      box.querySelectorAll('input').forEach(input=>input.addEventListener('input',updateTotal));
+      box.querySelectorAll('[data-remove-quote]').forEach(btn=>btn.onclick=()=>{ draftItems=collectQuoteRows(f,draftItems); draftItems.splice(Number(btn.dataset.removeQuote),1); redraw(); updateTotal(); });
+      box.querySelectorAll('[data-quote-row]').forEach((row,index)=>{
+        const priceInput=field(f,`quoteUnitPrice${index+1}`); if(priceInput) priceInput.addEventListener('input',()=>updatePriceState(index,row,priceInput));
+        const qty=field(f,`quoteQuantity${index+1}`); if(qty) qty.addEventListener('input',updateTotal);
+        const saveBtn=row.querySelector('[data-save-price]'); if(saveBtn) saveBtn.onclick=()=>saveRowAsStandard(index);
+      });
     };
-    const updateTotal=()=>{ const total=$('#quoteTotal'); if(total) total.textContent=money(quoteTotal(collectQuoteRows(f))); };
-    $('#addQuoteRow').onclick=()=>{ draftItems=collectQuoteRows(f); draftItems.push({description:'',quantity:1,unitPrice:0}); redraw(); updateTotal(); };
+    $('#openPriceBook').onclick=()=>nav('priceBook',{back:'quote',appointmentId,quoteId:value.id||quoteId||null});
+    $('#addQuoteBookRow').onclick=()=>{
+      draftItems=collectQuoteRows(f,draftItems);
+      const id=$('#quotePriceBookExtra').value; const item=priceBookEntries.find(entry=>String(entry.id)===String(id));
+      if(!item) return;
+      draftItems.push({kind:'extra',description:item.label,quantity:1,unit:item.unit||'stuk',unitPrice:Number(item.unit_price)||0,priceBookId:item.id,suggestedPrice:Number(item.unit_price)||0,priceSource:'pricebook'});
+      $('#quotePriceBookExtra').value=''; redraw(); updateTotal();
+    };
+    $('#addQuoteRow').onclick=()=>{ draftItems=collectQuoteRows(f,draftItems); draftItems.push({kind:'extra',description:'',quantity:1,unit:'stuk',unitPrice:0,priceBookId:null,suggestedPrice:0,priceSource:'none'}); redraw(); updateTotal(); };
     redraw(); updateTotal();
     const open=$('#openQuoteWorkOrder'); if(open) open.onclick=()=>nav('workOrderDetail',{workOrderId:workOrder.id,back:'surveyDetail',appointmentId,date:route.date});
     f.onsubmit=async e=>{
       e.preventDefault();
       const submit=$('#quoteSubmit'); submit.disabled=true; submit.textContent='Opslaan…';
       try{
-        const items=collectQuoteRows(f);
+        draftItems=collectQuoteRows(f,draftItems);
         const status=field(f,'status').value;
-        const savedId=await saveQuote({id:value.id,surveyAppointmentId:appointmentId,customerId:appointment.customerId,status,items,notes:field(f,'notes').value.trim()});
+        const savedId=await saveQuote({id:value.id,surveyAppointmentId:appointmentId,customerId:appointment.customerId,status,items:draftItems,notes:field(f,'notes').value.trim()});
         workOrder=await getWorkOrderByQuote(savedId).catch(()=>null);
         if(status==='accepted' && workOrder){
           nav('workOrderDetail',{workOrderId:workOrder.id,back:'surveyDetail',appointmentId,date:route.date});
@@ -1937,6 +2130,7 @@ async function quotePage(appointmentId,quoteId=null){
     };
   }catch(error){ app.innerHTML=`<section class="screen"><article class="card"><p class="title">Offerte kan niet worden geopend</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p></article></section>`; }
 }
+
 
 function workOrderSeedFromSurvey(workOrder,survey){
   const d=workOrder?.details||{};

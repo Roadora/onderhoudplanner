@@ -6,9 +6,9 @@ const config = fs.readFileSync(new URL('../src/config.js', import.meta.url), 'ut
 const sw = fs.readFileSync(new URL('../public/service-worker.js', import.meta.url), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
-assert.equal(pkg.version, '0.11.7');
-assert.match(config, /APP_VERSION = '0\.11\.7 Opname-opvolging'/);
-assert.match(sw, /CACHE_NAME = 'optero-v0\.11\.7'/);
+assert.equal(pkg.version, '0.11.8');
+assert.match(config, /APP_VERSION = '0\.11\.8 Terugnavigatie'/);
+assert.match(sw, /CACHE_NAME = 'optero-v0\.11\.8'/);
 assert.match(app, /listSurveys/);
 assert.match(app, /surveyRequiresFollowUp/);
 assert.match(app, /buildSurveyFollowUps/);

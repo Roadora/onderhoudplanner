@@ -342,7 +342,21 @@ function render(){
 }
 
 function navBack(){
-  if(route.name==='surveyDetail' || route.name==='surveyEdit') return nav('appointmentDetail',{appointmentId:route.appointmentId,back:currentRole==='technician'?'myDay':'agenda'});
+  if(route.name==='surveyEdit') return nav('surveyDetail',{
+    appointmentId:route.appointmentId,
+    back:route.back,
+    appointmentBack:route.appointmentBack,
+    date:route.date
+  });
+  if(route.name==='surveyDetail'){
+    if(route.back==='notifications') return nav('notifications');
+    if(route.back==='appointmentDetail') return nav('appointmentDetail',{
+      appointmentId:route.appointmentId,
+      back:route.appointmentBack || (currentRole==='technician'?'myDay':'agenda'),
+      date:route.date
+    });
+    return nav('appointmentDetail',{appointmentId:route.appointmentId,back:currentRole==='technician'?'myDay':'agenda',date:route.date});
+  }
   if(route.name==='appointmentDetail') return nav(currentRole==='technician' ? 'myDay' : 'dayPlan',{date:route.date || todayKey(),back:'agenda'});
   if(route.name==='notifications' || route.name==='account' || route.name==='team' || route.name==='settings') return nav(currentRole === 'technician' ? 'myDay' : 'dashboard');
   if(route.name==='detail') return nav(route.back || 'dashboard');
@@ -442,7 +456,7 @@ function surveyFollowUpCard(item){
     </div>
     <p class="muted">Er staat na deze afgeronde opname nog geen vervolgafspraak bij de klant.</p>
     <div class="actions">
-      <button class="secondary" onclick="nav('surveyDetail',{appointmentId:'${a.id}'})">📋 Bekijk opname</button>
+      <button class="secondary" onclick="nav('surveyDetail',{appointmentId:'${a.id}',back:'notifications'})">📋 Bekijk opname</button>
       <button class="primary" onclick="nav('newAppointment',{customerId:'${a.customerId}',type:'${followUpAppointmentType(survey)}',date:'${todayKey()}',back:'notifications'})">📅 Vervolg plannen</button>
     </div>
   </article>`;
@@ -759,7 +773,7 @@ function appointmentDetail(id){
       </div>
     </article>` : ''}
 
-    ${a.type==='opname'?`<button class="primary" onclick="nav('surveyDetail',{appointmentId:'${a.id}'})">📋 Open opnamedossier</button>`:''}
+    ${a.type==='opname'?`<button class="primary" onclick="nav('surveyDetail',{appointmentId:'${a.id}',back:'appointmentDetail',appointmentBack:'${route.back || (currentRole==='technician'?'myDay':'agenda')}',date:'${route.date || a.date}'})">📋 Open opnamedossier</button>`:''}
     ${currentRole==='technician'?'':`<button class="secondary" style="width:100%;margin-top:10px" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'appointmentDetail'})">✏️ Afspraak bewerken</button><button class="danger" style="width:100%;margin-top:10px" onclick="deleteGenericAppointment('${a.id}')">🗑 Afspraak verwijderen</button>`}
   </section>`;
 }
@@ -1606,7 +1620,7 @@ async function surveyDetailPage(appointmentId){
       <article class="card"><div class="row between"><div><p class="eyebrow">OPNAMEDOSSIER</p><h2>${esc(c.name||'Klant')}</h2><p class="muted">${fmt(a.date)} · ${a.time||'Tijd onbekend'} · ${esc(fullAddress(c))}</p></div><span class="pill">${surveyStatusLabel(survey?.status)}</span></div></article>
       <article class="card"><div class="row between"><div><p class="eyebrow">TYPE OPNAME</p><p class="title">${surveyPurposeLabel(survey?.purpose)}</p></div></div>${renderSurveyDetails(survey?.purpose,survey?.details||{})}${survey?.scope?`<div class="notice survey-note"><b>Klantwens / omschrijving</b><br>${esc(survey.scope)}</div>`:''}${survey?.findings?`<div class="notice survey-note"><b>Constateringen</b><br>${esc(survey.findings)}</div>`:''}${survey?.technical_notes?`<div class="notice survey-note"><b>Technische notities</b><br>${esc(survey.technical_notes)}</div>`:''}</article>
       <article class="card"><div class="row between"><p class="title">Foto's</p><span class="muted">${photos.length}</span></div><div class="survey-photo-grid">${photos.map(p=>`<a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a>`).join('') || '<p class="muted">Nog geen foto’s toegevoegd.</p>'}</div></article>
-      <button class="primary" onclick="nav('surveyEdit',{appointmentId:'${appointmentId}'})">${survey?'✏️ Opname bijwerken':'📋 Opname invullen'}</button>
+      <button class="primary" onclick="nav('surveyEdit',{appointmentId:'${appointmentId}',back:route.back,appointmentBack:route.appointmentBack,date:route.date})">${survey?'✏️ Opname bijwerken':'📋 Opname invullen'}</button>
     </section>`;
   }catch(error){ app.innerHTML=`<section class="screen"><article class="card"><p class="title">Opnamedossier kan niet worden geladen</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p></article></section>`; }
 }
@@ -1647,7 +1661,7 @@ async function surveyEditPage(appointmentId){
     };
     purposeField.onchange=()=>{ $('#surveyDynamicFields').innerHTML=dynamicSurveyFields(purposeField.value,{}); wireSurveyDynamic(); };
     wireSurveyDynamic();
-    f.onsubmit=async e=>{ e.preventDefault(); const submit=f.querySelector('button[type="submit"]'); submit.disabled=true; submit.textContent='Opslaan…'; try{ const purpose=field(f,'purpose').value; await saveSurvey(appointmentId,{purpose,scope:field(f,'scope').value.trim(),findings:field(f,'findings').value.trim(),technicalNotes:field(f,'technicalNotes').value.trim(),status:field(f,'status').value,details:collectDynamicSurveyDetails(f,purpose)}); const files=$('#surveyPhotos')?.files; if(files?.length) await uploadSurveyPhotos(appointmentId,files); nav('surveyDetail',{appointmentId}); }catch(error){ alert(`Opname opslaan lukt niet.\n\n${error?.message||'Onbekende fout'}`); submit.disabled=false; submit.textContent='Opname opslaan'; } };
+    f.onsubmit=async e=>{ e.preventDefault(); const submit=f.querySelector('button[type="submit"]'); submit.disabled=true; submit.textContent='Opslaan…'; try{ const purpose=field(f,'purpose').value; await saveSurvey(appointmentId,{purpose,scope:field(f,'scope').value.trim(),findings:field(f,'findings').value.trim(),technicalNotes:field(f,'technicalNotes').value.trim(),status:field(f,'status').value,details:collectDynamicSurveyDetails(f,purpose)}); const files=$('#surveyPhotos')?.files; if(files?.length) await uploadSurveyPhotos(appointmentId,files); nav('surveyDetail',{appointmentId,back:route.back,appointmentBack:route.appointmentBack,date:route.date}); }catch(error){ alert(`Opname opslaan lukt niet.\n\n${error?.message||'Onbekende fout'}`); submit.disabled=false; submit.textContent='Opname opslaan'; } };
   }catch(error){ app.innerHTML=`<section class="screen"><article class="card"><p class="title">Opname kan niet worden geopend</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p></article></section>`; }
 }
 

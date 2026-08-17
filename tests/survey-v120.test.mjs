@@ -3,11 +3,7 @@ import assert from 'node:assert/strict';
 
 const app = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
-const config = fs.readFileSync(new URL('../src/config.js', import.meta.url), 'utf8');
-const sw = fs.readFileSync(new URL('../public/service-worker.js', import.meta.url), 'utf8');
 
-assert.match(config, /0\.12\.0 Opname 2\.0/);
-assert.match(sw, /optero-v0\.12\.0/);
 
 assert.match(app, /Is een opname nodig\?/);
 assert.match(app, /Ja, opname uitvoeren/);

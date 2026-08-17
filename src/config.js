@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.12.0 Opname 2.0';
+export const APP_VERSION = '0.12.1 Opname-audit';
 
 // Bewust gelijk aan v0.7, zodat bestaande lokale data eenmalig aan het eerste
 // bedrijfsaccount op dit apparaat gekoppeld kan worden.

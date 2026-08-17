@@ -1702,8 +1702,15 @@ async function surveyDetailPage(appointmentId){
       <article class="card"><div class="row between"><div><p class="eyebrow">OPNAMEDOSSIER</p><h2>${esc(c.name||'Klant')}</h2><p class="muted">${fmt(a.date)} · ${a.time||'Tijd onbekend'} · ${esc(fullAddress(c))}</p></div><span class="pill ${surveyNeeded?'':'survey-not-needed-pill'}">${surveyNeeded?surveyStatusLabel(survey?.status):'Niet nodig'}</span></div></article>
       ${surveyNeeded?`<article class="card"><div class="row between"><div><p class="eyebrow">TYPE OPNAME</p><p class="title">${surveyPurposeLabel(survey?.purpose)}</p></div></div>${renderSurveyDetails(survey?.purpose,survey?.details||{})}${renderExtraWorkDetails(survey?.details||{})}${survey?.scope?`<div class="notice survey-note"><b>Klantwens / omschrijving</b><br>${esc(survey.scope)}</div>`:''}${survey?.findings?`<div class="notice survey-note"><b>Constateringen</b><br>${esc(survey.findings)}</div>`:''}${survey?.technical_notes?`<div class="notice survey-note"><b>Technische notities</b><br>${esc(survey.technical_notes)}</div>`:''}</article>`:`<article class="card survey-not-needed-card"><p class="eyebrow">OPNAME NIET NODIG</p><p class="title">Geen technisch opnamedossier nodig</p><p class="muted">Deze opname is bewust overgeslagen en verschijnt niet als open vervolgactie.</p></article>`}
       ${surveyNeeded?`<article class="card"><div class="row between"><p class="title">Foto's</p><span class="muted">${photos.length}</span></div><div class="survey-photo-grid">${photos.map(p=>`<a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a>`).join('') || '<p class="muted">Nog geen foto’s toegevoegd.</p>'}</div></article>`:''}
-      <button class="primary" onclick="nav('surveyEdit',{appointmentId:'${appointmentId}',back:route.back,appointmentBack:route.appointmentBack,date:route.date})">${survey?'✏️ Opname bijwerken':'📋 Opname invullen'}</button>
+      <button class="primary" id="surveyEditBtn" type="button">${survey?'✏️ Opname bijwerken':'📋 Opname invullen'}</button>
     </section>`;
+    const surveyEditBtn=$('#surveyEditBtn');
+    if(surveyEditBtn) surveyEditBtn.onclick=()=>nav('surveyEdit',{
+      appointmentId,
+      back:route.back,
+      appointmentBack:route.appointmentBack,
+      date:route.date
+    });
   }catch(error){ app.innerHTML=`<section class="screen"><article class="card"><p class="title">Opnamedossier kan niet worden geladen</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p></article></section>`; }
 }
 

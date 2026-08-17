@@ -6,7 +6,7 @@ const account = fs.readFileSync(new URL('../src/auth/account-service.js', import
 const invite = fs.readFileSync(new URL('../api/invite-team-member.js', import.meta.url), 'utf8');
 const sql = fs.readFileSync(new URL('../supabase/roles_mail_hardening_v096.sql', import.meta.url), 'utf8');
 
-assert.match(app, /technician: new Set\(\['myDay','account','appointmentDetail'\]\)/, 'Monteur mag alleen Mijn dag en Mijn account routen.');
+assert.match(app, /technician: new Set\(\['myDay','account','appointmentDetail','surveyDetail','surveyEdit'\]\)/, 'Monteur mag alleen zijn planning, account, afspraakdetails en toegewezen opnamedossier routen.');
 assert.match(app, /if\(currentRole !== 'owner'\) return nav\(defaultRouteForRole\(\)\);/, 'Medewerkersbeheer moet eigenaar-only zijn.');
 assert.match(app, /currentRole === 'owner'.*Bedrijfsinstellingen wijzigen/s, 'Bedrijfsinstellingenknop moet eigenaar-only zijn.');
 assert.match(app, /syncStatusBtn\.hidden = true/, 'Cloudstatus moet bij monteurs verborgen zijn zolang zij geen bedrijfsdataset laden.');

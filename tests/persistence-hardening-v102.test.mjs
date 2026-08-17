@@ -6,7 +6,7 @@ const team=fs.readFileSync(new URL('../src/team/team-service.js', import.meta.ur
 const pwa=fs.readFileSync(new URL('../src/pwa.js', import.meta.url),'utf8');
 assert.match(app,/verifyCloudAppointment\(appointmentId\)/);
 assert.match(cloud,/export async function verifyCloudAppointment/);
-assert.match(cloud,/from\('appointments'\)/);
+assert.match(cloud,/verify_appointment_persisted_v103/);
 assert.match(team,/insertedCount/);
 assert.match(team,/getAppointmentAssignments\(appointmentId\)/);
 assert.match(team,/medewerkerstoewijzing is niet volledig opgeslagen/i);

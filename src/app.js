@@ -3,6 +3,7 @@ import { localRepository } from './data/local-repository.js';
 import { getAccountContext } from './account-context.js';
 import { listTeamMembers, listPendingInvitations, inviteTeamMember, getAppointmentAssignments, setAppointmentAssignments } from './team/team-service.js';
 import { flushCloudSync, verifyCloudAppointment, deleteCloudAppointments, deleteCloudInstallation, deleteCloudCustomer, clearCloudOperationalData } from './data/cloud-repository.js';
+import { getSurvey, saveSurvey, listSurveyPhotos, uploadSurveyPhotos, deleteSurveyPhoto } from './surveys/survey-service.js';
 
 const $ = (s) => document.querySelector(s);
 const field = (form, name) => form?.elements?.namedItem(name) || null;
@@ -198,12 +199,14 @@ function appointmentIcon(type){
   if(type==='plaatsing') return '🛠';
   if(type==='storing') return '🚨';
   if(type==='controle') return '🔎';
+  if(type==='opname') return '📋';
   return '❄️';
 }
 function appointmentTitle(type){
   if(type==='plaatsing') return 'Plaatsing';
   if(type==='storing') return 'Storing';
   if(type==='controle') return 'Controle';
+  if(type==='opname') return 'Opname';
   return 'Onderhoud';
 }
 function appointmentsForCustomer(customerId){
@@ -268,9 +271,9 @@ function contactStatusSelect(s){
 }
 
 const ROLE_ROUTE_ACCESS = Object.freeze({
-  owner: new Set(['dashboard','customers','agenda','settings','account','team','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications']),
-  planner: new Set(['dashboard','customers','agenda','account','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications']),
-  technician: new Set(['myDay','account','appointmentDetail']),
+  owner: new Set(['dashboard','customers','agenda','settings','account','team','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit']),
+  planner: new Set(['dashboard','customers','agenda','account','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit']),
+  technician: new Set(['myDay','account','appointmentDetail','surveyDetail','surveyEdit']),
   viewer: new Set(['account'])
 });
 
@@ -304,7 +307,7 @@ function render(){
   const titles = {
     dashboard:'Dashboard', customers:'Klanten', agenda:'Agenda', settings:'Instellingen', account:currentRole === 'technician' ? 'Mijn account' : 'Bedrijfsaccount', team:'Medewerkers', myDay:'Mijn dag',
     new:'Nieuwe installatie', detail:'Klantdetail', editCustomer:'Klant bewerken',
-    editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', newAppointment:'Afspraak inplannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails', notifications:'Actielijst'
+    editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', newAppointment:'Afspraak inplannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails', notifications:'Actielijst', surveyDetail:'Opnamedossier', surveyEdit:'Opname invullen'
   };
   pageTitle.textContent = titles[route.name] || 'Optero';
 
@@ -324,11 +327,14 @@ function render(){
   if(route.name==='dayPlan') dayPlan(route.date);
   if(route.name==='appointmentDetail') appointmentDetail(route.appointmentId);
   if(route.name==='notifications') notificationsPage();
+  if(route.name==='surveyDetail') void surveyDetailPage(route.appointmentId);
+  if(route.name==='surveyEdit') void surveyEditPage(route.appointmentId);
 
   updateFab();
 }
 
 function navBack(){
+  if(route.name==='surveyDetail' || route.name==='surveyEdit') return nav('appointmentDetail',{appointmentId:route.appointmentId,back:currentRole==='technician'?'myDay':'agenda'});
   if(route.name==='appointmentDetail') return nav(currentRole==='technician' ? 'myDay' : 'dayPlan',{date:route.date || todayKey(),back:'agenda'});
   if(route.name==='notifications' || route.name==='account' || route.name==='team') return nav(currentRole === 'technician' ? 'myDay' : 'dashboard');
   if(route.name==='detail') return nav(route.back || 'dashboard');
@@ -436,6 +442,7 @@ function dashboard(){
       <p class="title dashboard-greeting">${dashboardGreeting()}</p>
       <p class="muted">${esc(state.settings.companyName)} · ${actionSystems().length} onderhoudsmomenten vragen aandacht.</p>
     </article>
+    ${currentRole==='technician'?'':`<article class="card survey-dashboard-card"><div class="row between"><div><p class="title">📋 Opnames</p><p class="muted">Plan een opname en leg bevindingen, technische notities en foto's vast.</p></div><button class="smallbtn" onclick="nav('newAppointment',{type:'opname',date:'${todayKey()}',back:'dashboard'})">+ Opname</button></div></article>`}
     ${statCards()}
     ${revenueCard()}
     <div class="list-header">
@@ -632,7 +639,8 @@ function appointmentDetail(id){
       </div>
     </article>` : ''}
 
-    ${currentRole==='technician'?'':`<button class="primary" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'appointmentDetail'})">✏️ Afspraak bewerken</button><button class="danger" style="width:100%;margin-top:10px" onclick="deleteGenericAppointment('${a.id}')">🗑 Afspraak verwijderen</button>`}
+    ${a.type==='opname'?`<button class="primary" onclick="nav('surveyDetail',{appointmentId:'${a.id}'})">📋 Open opnamedossier</button>`:''}
+    ${currentRole==='technician'?'':`<button class="secondary" style="width:100%;margin-top:10px" onclick="nav('newAppointment',{appointmentId:'${a.id}',back:'appointmentDetail'})">✏️ Afspraak bewerken</button><button class="danger" style="width:100%;margin-top:10px" onclick="deleteGenericAppointment('${a.id}')">🗑 Afspraak verwijderen</button>`}
   </section>`;
 }
 
@@ -1115,6 +1123,7 @@ async function newAppointment(){
             <option value="onderhoud" ${typeValue==='onderhoud'?'selected':''}>Onderhoud</option>
             <option value="storing" ${typeValue==='storing'?'selected':''}>Storing</option>
             <option value="controle" ${typeValue==='controle'?'selected':''}>Controle / inspectie</option>
+            <option value="opname" ${typeValue==='opname'?'selected':''}>Opname</option>
           </select>
         </div>
         <div class="field">
@@ -1223,6 +1232,52 @@ async function newAppointment(){
     }
   };
 }
+
+function surveyPurposeLabel(value){
+  return ({nieuwe_installatie:'Nieuwe installatie',vervanging:'Vervanging',uitbreiding:'Uitbreiding',storing_onderzoek:'Storing / onderzoek',onderhoud:'Onderhoud',anders:'Anders'})[value] || 'Nieuwe installatie';
+}
+function surveyStatusLabel(value){ return ({planned:'Gepland',in_progress:'Bezig',completed:'Afgerond'})[value] || 'Gepland'; }
+
+async function surveyDetailPage(appointmentId){
+  const a=appointments().find(x=>x.id===appointmentId);
+  if(!a || a.type!=='opname') return nav('agenda');
+  app.innerHTML='<section class="screen"><article class="card"><p class="title">Opnamedossier laden…</p></article></section>';
+  try{
+    const [survey,photos]=await Promise.all([getSurvey(appointmentId),listSurveyPhotos(appointmentId)]);
+    const c=customer(a.customerId)||{};
+    app.innerHTML=`<section class="screen survey-detail-screen">
+      <article class="card"><div class="row between"><div><p class="eyebrow">OPNAMEDOSSIER</p><h2>${esc(c.name||'Klant')}</h2><p class="muted">${fmt(a.date)} · ${a.time||'Tijd onbekend'} · ${esc(fullAddress(c))}</p></div><span class="pill">${surveyStatusLabel(survey?.status)}</span></div></article>
+      <article class="card"><p class="title">Opname</p><div class="detail-grid" style="margin-top:12px"><div class="mini"><span>Waarvoor</span><b>${surveyPurposeLabel(survey?.purpose)}</b></div><div class="mini"><span>Status</span><b>${surveyStatusLabel(survey?.status)}</b></div></div>${survey?.scope?`<div class="notice" style="margin-top:12px"><b>Omschrijving</b><br>${esc(survey.scope)}</div>`:''}${survey?.findings?`<div class="notice" style="margin-top:12px"><b>Constateringen</b><br>${esc(survey.findings)}</div>`:''}${survey?.technical_notes?`<div class="notice" style="margin-top:12px"><b>Technische notities</b><br>${esc(survey.technical_notes)}</div>`:''}</article>
+      <article class="card"><div class="row between"><p class="title">Foto's</p><span class="muted">${photos.length}</span></div><div class="survey-photo-grid">${photos.map(p=>`<a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a>`).join('') || '<p class="muted">Nog geen foto’s toegevoegd.</p>'}</div></article>
+      <button class="primary" onclick="nav('surveyEdit',{appointmentId:'${appointmentId}'})">${survey?'✏️ Opname bijwerken':'📋 Opname invullen'}</button>
+    </section>`;
+  }catch(error){ app.innerHTML=`<section class="screen"><article class="card"><p class="title">Opnamedossier kan niet worden geladen</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p></article></section>`; }
+}
+
+async function surveyEditPage(appointmentId){
+  const a=appointments().find(x=>x.id===appointmentId);
+  if(!a || a.type!=='opname') return nav('agenda');
+  app.innerHTML='<section class="screen"><article class="card"><p class="title">Opname laden…</p></article></section>';
+  try{
+    const [survey,photos]=await Promise.all([getSurvey(appointmentId),listSurveyPhotos(appointmentId)]);
+    const value=survey||{purpose:'nieuwe_installatie',scope:'',findings:'',technical_notes:'',status:'planned'};
+    app.innerHTML=`<section class="screen survey-edit-screen"><form id="surveyForm" class="form">
+      <article class="card"><p class="eyebrow">OPNAME</p><h2>Situatie vastleggen</h2><p class="muted">Leg alleen informatie vast die nodig is voor voorbereiding en uitvoering.</p>
+        <div class="field"><label>Waarvoor is de opname?</label><select name="purpose">${[['nieuwe_installatie','Nieuwe installatie'],['vervanging','Vervanging'],['uitbreiding','Uitbreiding'],['storing_onderzoek','Storing / onderzoek'],['onderhoud','Onderhoud'],['anders','Anders']].map(([v,l])=>`<option value="${v}" ${value.purpose===v?'selected':''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><label>Omschrijving / klantwens</label><textarea name="scope" rows="3" placeholder="Bijv. airco voor slaapkamer, buitenunit liefst op plat dak">${esc(value.scope||'')}</textarea></div>
+        <div class="field"><label>Constateringen</label><textarea name="findings" rows="4" placeholder="Wat is ter plaatse vastgesteld?">${esc(value.findings||'')}</textarea></div>
+        <div class="field"><label>Technische notities</label><textarea name="technicalNotes" rows="4" placeholder="Leidingroute, elektra, condensafvoer, bereikbaarheid, benodigde materialen…">${esc(value.technical_notes||'')}</textarea></div>
+        <div class="field"><label>Status</label><select name="status"><option value="planned" ${value.status==='planned'?'selected':''}>Gepland</option><option value="in_progress" ${value.status==='in_progress'?'selected':''}>Bezig</option><option value="completed" ${value.status==='completed'?'selected':''}>Afgerond</option></select></div>
+      </article>
+      <article class="card"><p class="title">Foto's toevoegen</p><p class="muted">Maak foto's van de situatie, leidingroute, meterkast of andere belangrijke details. Maximaal 8 MB per foto.</p><input id="surveyPhotos" type="file" accept="image/*" capture="environment" multiple><div class="survey-photo-grid" style="margin-top:12px">${photos.map(p=>`<div class="survey-photo-item"><a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a><button type="button" class="smallbtn" data-photo-id="${p.id}" data-photo-path="${p.storage_path}">Verwijder</button></div>`).join('')}</div></article>
+      <button class="primary" type="submit">Opname opslaan</button>
+    </form></section>`;
+    document.querySelectorAll('[data-photo-id]').forEach(btn=>btn.onclick=async()=>{ if(!confirm('Foto verwijderen?')) return; try{ await deleteSurveyPhoto(btn.dataset.photoId,btn.dataset.photoPath); await surveyEditPage(appointmentId); }catch(e){alert(e.message||'Foto verwijderen mislukt.');} });
+    const f=$('#surveyForm');
+    f.onsubmit=async e=>{ e.preventDefault(); const submit=f.querySelector('button[type="submit"]'); submit.disabled=true; submit.textContent='Opslaan…'; try{ await saveSurvey(appointmentId,{purpose:field(f,'purpose').value,scope:field(f,'scope').value.trim(),findings:field(f,'findings').value.trim(),technicalNotes:field(f,'technicalNotes').value.trim(),status:field(f,'status').value}); const files=$('#surveyPhotos')?.files; if(files?.length) await uploadSurveyPhotos(appointmentId,files); nav('surveyDetail',{appointmentId}); }catch(error){ alert(`Opname opslaan lukt niet.\n\n${error?.message||'Onbekende fout'}`); submit.disabled=false; submit.textContent='Opname opslaan'; } };
+  }catch(error){ app.innerHTML=`<section class="screen"><article class="card"><p class="title">Opname kan niet worden geopend</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p></article></section>`; }
+}
+
 async function deleteGenericAppointment(id){
   if(!confirm('Afspraak verwijderen?')) return;
   try{ await deleteCloudAppointments([id]); }

@@ -6,7 +6,7 @@ const BUCKET='opname-fotos';
 export async function listSurveys(){
   const account=getAccountContext();
   const supabase=getSupabaseClient();
-  const {data,error}=await supabase.rpc('list_surveys_v110',{p_organization_id:account.organization.id});
+  const {data,error}=await supabase.rpc('list_surveys_v112',{p_organization_id:account.organization.id});
   if(error) throw error;
   return data||[];
 }
@@ -14,7 +14,7 @@ export async function listSurveys(){
 export async function getSurvey(appointmentId){
   const account=getAccountContext();
   const supabase=getSupabaseClient();
-  const {data,error}=await supabase.rpc('get_survey_v110',{p_organization_id:account.organization.id,p_appointment_id:appointmentId});
+  const {data,error}=await supabase.rpc('get_survey_v112',{p_organization_id:account.organization.id,p_appointment_id:appointmentId});
   if(error) throw error;
   return Array.isArray(data)?(data[0]||null):data;
 }
@@ -22,14 +22,15 @@ export async function getSurvey(appointmentId){
 export async function saveSurvey(appointmentId,payload){
   const account=getAccountContext();
   const supabase=getSupabaseClient();
-  const {data,error}=await supabase.rpc('upsert_survey_v110',{
+  const {data,error}=await supabase.rpc('upsert_survey_v112',{
     p_organization_id:account.organization.id,
     p_appointment_id:appointmentId,
     p_purpose:payload.purpose||'nieuwe_installatie',
     p_scope:payload.scope||'',
     p_findings:payload.findings||'',
     p_technical_notes:payload.technicalNotes||'',
-    p_status:payload.status||'planned'
+    p_status:payload.status||'planned',
+    p_details:payload.details||{}
   });
   if(error) throw error;
   return data;

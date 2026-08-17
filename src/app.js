@@ -1237,6 +1237,90 @@ function surveyPurposeLabel(value){
   return ({nieuwe_installatie:'Nieuwe installatie',vervanging:'Vervanging',uitbreiding:'Uitbreiding',storing_onderzoek:'Storing / onderzoek',onderhoud:'Onderhoud',anders:'Anders'})[value] || 'Nieuwe installatie';
 }
 function surveyStatusLabel(value){ return ({planned:'Gepland',in_progress:'Bezig',completed:'Afgerond'})[value] || 'Gepland'; }
+function ynSelect(name,label,value='unknown'){
+  return `<div class="field"><label>${label}</label><select name="${name}"><option value="unknown" ${value==='unknown'?'selected':''}>Onbekend / nog controleren</option><option value="yes" ${value==='yes'?'selected':''}>Ja</option><option value="no" ${value==='no'?'selected':''}>Nee</option></select></div>`;
+}
+function surveyField(name,label,value='',placeholder='',type='text'){
+  if(type==='textarea') return `<div class="field"><label>${label}</label><textarea name="${name}" rows="3" placeholder="${esc(placeholder)}">${esc(value||'')}</textarea></div>`;
+  if(type==='number') return `<div class="field"><label>${label}</label><input name="${name}" type="number" min="0" step="0.1" value="${esc(value??'')}" placeholder="${esc(placeholder)}"></div>`;
+  return `<div class="field"><label>${label}</label><input name="${name}" type="text" value="${esc(value||'')}" placeholder="${esc(placeholder)}"></div>`;
+}
+function surveySelect(name,label,value,options){
+  return `<div class="field"><label>${label}</label><select name="${name}">${options.map(([v,l])=>`<option value="${v}" ${String(value??'')===String(v)?'selected':''}>${l}</option>`).join('')}</select></div>`;
+}
+function dynamicSurveyFields(purpose,details={}){
+  if(purpose==='nieuwe_installatie') return `
+    <div class="survey-section-head"><b>Gewenste installatie</b><span>Wat wil de klant en wat is technisch nodig?</span></div>
+    ${surveySelect('systemType','Type systeem',details.systemType||'single_split',[['single_split','Single split airco'],['multi_split','Multi split airco'],['warmtepomp','Warmtepomp'],['air_air_heatpump','Lucht-lucht warmtepomp'],['anders','Anders']])}
+    <div class="form-grid-2">${surveyField('indoorUnits','Aantal binnenunits',details.indoorUnits||1,'1','number')}${surveyField('brandPreference','Merkvoorkeur',details.brandPreference||'','Daikin, Mitsubishi, Panasonic…')}</div>
+    ${surveyField('rooms','Ruimtes / zones',details.rooms||'','Bijv. woonkamer + 2 slaapkamers','textarea')}
+    ${surveyField('capacityNotes','Vermogen / bijzonderheden',details.capacityNotes||'','Oppervlakte, gewenste capaciteit of andere wensen','textarea')}
+    <div class="survey-section-head"><b>Montagesituatie</b><span>Voorbereiding voor de uiteindelijke installatie.</span></div>
+    ${surveyField('indoorLocation','Gewenste plek binnenunit(s)',details.indoorLocation||'','Bijv. boven deur, vrije wand slaapkamer','textarea')}
+    ${surveyField('outdoorLocation','Gewenste plek buitenunit',details.outdoorLocation||'','Plat dak, gevel, balkon…','textarea')}
+    <div class="form-grid-2">${surveyField('estimatedLineLengthM','Geschatte leidinglengte (m)',details.estimatedLineLengthM||'','Bijv. 8','number')}${surveyField('heightAccess','Hoogte / bereikbaarheid',details.heightAccess||'','Begane grond, steiger nodig…')}</div>
+    <div class="form-grid-2">${ynSelect('electricalPresent','Geschikte elektra aanwezig?',details.electricalPresent||'unknown')}${ynSelect('condensatePossible','Condensafvoer mogelijk?',details.condensatePossible||'unknown')}</div>
+    ${surveyField('installationMaterials','Benodigde materialen / voorbereiding',details.installationMaterials||'','Dakdoorvoer, pomp, goot, beugels…','textarea')}`;
+  if(purpose==='vervanging') return `
+    <div class="survey-section-head"><b>Bestaande installatie</b><span>Leg vast wat er nu aanwezig is en waarom het wordt vervangen.</span></div>
+    <div class="form-grid-2">${surveyField('existingBrand','Merk',details.existingBrand||'','Bijv. Daikin')}${surveyField('existingModel','Model',details.existingModel||'','Type/model')}</div>
+    <div class="form-grid-2">${surveyField('existingRefrigerant','Koudemiddel',details.existingRefrigerant||'','R32 / R410A')}${surveyField('existingAge','Leeftijd / bouwjaar',details.existingAge||'','Bijv. 2015')}</div>
+    ${surveyField('replacementReason','Reden van vervanging',details.replacementReason||'','Defect, verouderd, te weinig vermogen…','textarea')}
+    <div class="survey-section-head"><b>Nieuwe situatie</b><span>Wat moet ervoor terugkomen?</span></div>
+    ${surveySelect('desiredSystemType','Gewenst type',details.desiredSystemType||'single_split',[['single_split','Single split airco'],['multi_split','Multi split airco'],['warmtepomp','Warmtepomp'],['anders','Anders']])}
+    <div class="form-grid-2">${surveyField('desiredUnits','Aantal binnenunits',details.desiredUnits||1,'1','number')}${surveyField('brandPreference','Merkvoorkeur',details.brandPreference||'','Geen voorkeur')}</div>
+    <div class="form-grid-2">${ynSelect('reusePipework','Bestaand leidingwerk hergebruiken?',details.reusePipework||'unknown')}${ynSelect('electricalPresent','Elektra geschikt?',details.electricalPresent||'unknown')}</div>
+    ${surveyField('replacementNotes','Aanpassingen / bijzonderheden',details.replacementNotes||'','','textarea')}`;
+  if(purpose==='uitbreiding') return `
+    <div class="survey-section-head"><b>Uitbreiding bestaande installatie</b><span>Welke uitbreiding wil de klant?</span></div>
+    <div class="form-grid-2">${surveyField('existingBrandModel','Bestaand merk / model',details.existingBrandModel||'','Merk + buitendeel')}${surveyField('additionalUnits','Extra binnenunits',details.additionalUnits||1,'1','number')}</div>
+    ${surveyField('newRooms','Nieuwe ruimtes / zones',details.newRooms||'','','textarea')}
+    ${surveyField('brandPreference','Merkvoorkeur',details.brandPreference||'','Zelfde merk indien mogelijk')}
+    ${surveyField('compatibilityNotes','Compatibiliteit / technische beoordeling',details.compatibilityNotes||'','Kan bestaand buitendeel worden uitgebreid?','textarea')}
+    <div class="form-grid-2">${surveyField('estimatedLineLengthM','Extra leidinglengte (m)',details.estimatedLineLengthM||'','','number')}${ynSelect('electricalPresent','Elektra toereikend?',details.electricalPresent||'unknown')}</div>`;
+  if(purpose==='storing_onderzoek') return `
+    <div class="survey-section-head"><b>Storing onderzoeken</b><span>Werk van klacht naar diagnose en vervolgactie.</span></div>
+    ${surveyField('customerComplaint','Klacht van de klant',details.customerComplaint||'','Wat merkt de klant precies?','textarea')}
+    <div class="form-grid-2">${surveyField('sinceWhen','Sinds wanneer?',details.sinceWhen||'','Vandaag / sinds vorige week…')}${surveyField('errorCode','Foutcode',details.errorCode||'','Bijv. U4')}</div>
+    ${surveyField('existingBrandModel','Merk / model installatie',details.existingBrandModel||'','Merk + model indien bekend')}
+    ${surveyField('stillWorking','Wat werkt nog wel / niet?',details.stillWorking||'','','textarea')}
+    ${surveyField('measurements','Metingen / testresultaten',details.measurements||'','Druk, temperatuur, stroom, spanning…','textarea')}
+    ${surveyField('suspectedCause','Vermoedelijke oorzaak',details.suspectedCause||'','','textarea')}
+    ${surveyField('partsNeeded','Benodigde onderdelen / materialen',details.partsNeeded||'','','textarea')}
+    ${surveySelect('followUp','Vervolgactie',details.followUp||'nader_onderzoek',[['nader_onderzoek','Nader onderzoek nodig'],['reparatie','Reparatie inplannen'],['onderdeel_bestellen','Onderdeel bestellen'],['offerte','Offerte maken'],['opgelost','Storing opgelost']])}`;
+  if(purpose==='onderhoud') return `
+    <div class="survey-section-head"><b>Onderhoudsopname</b><span>Beoordeel de huidige staat en het benodigde onderhoud.</span></div>
+    ${surveyField('systemCondition','Staat van de installatie',details.systemCondition||'','','textarea')}
+    ${surveyField('maintenanceNeeded','Benodigd onderhoud',details.maintenanceNeeded||'','','textarea')}
+    ${surveyField('anomalies','Afwijkingen / aandachtspunten',details.anomalies||'','','textarea')}
+    ${surveyField('partsNeeded','Onderdelen / materialen nodig',details.partsNeeded||'','','textarea')}`;
+  return `
+    <div class="survey-section-head"><b>Opnamegegevens</b><span>Leg alleen vast wat voor deze situatie relevant is.</span></div>
+    ${surveyField('customSituation','Situatie / vraag',details.customSituation||'','','textarea')}
+    ${surveyField('customRequirements','Benodigdheden / vervolg',details.customRequirements||'','','textarea')}`;
+}
+function collectDynamicSurveyDetails(form,purpose){
+  const names={
+    nieuwe_installatie:['systemType','indoorUnits','brandPreference','rooms','capacityNotes','indoorLocation','outdoorLocation','estimatedLineLengthM','heightAccess','electricalPresent','condensatePossible','installationMaterials'],
+    vervanging:['existingBrand','existingModel','existingRefrigerant','existingAge','replacementReason','desiredSystemType','desiredUnits','brandPreference','reusePipework','electricalPresent','replacementNotes'],
+    uitbreiding:['existingBrandModel','additionalUnits','newRooms','brandPreference','compatibilityNotes','estimatedLineLengthM','electricalPresent'],
+    storing_onderzoek:['customerComplaint','sinceWhen','errorCode','existingBrandModel','stillWorking','measurements','suspectedCause','partsNeeded','followUp'],
+    onderhoud:['systemCondition','maintenanceNeeded','anomalies','partsNeeded'],
+    anders:['customSituation','customRequirements']
+  }[purpose]||[];
+  return Object.fromEntries(names.map(name=>[name,field(form,name)?.value?.trim?.() ?? field(form,name)?.value ?? '']));
+}
+function detailValueLabel(key,value){
+  const bool={yes:'Ja',no:'Nee',unknown:'Nog controleren'};
+  if(bool[value]) return bool[value];
+  const maps={systemType:{single_split:'Single split airco',multi_split:'Multi split airco',warmtepomp:'Warmtepomp',air_air_heatpump:'Lucht-lucht warmtepomp',anders:'Anders'},desiredSystemType:{single_split:'Single split airco',multi_split:'Multi split airco',warmtepomp:'Warmtepomp',anders:'Anders'},followUp:{nader_onderzoek:'Nader onderzoek',reparatie:'Reparatie inplannen',onderdeel_bestellen:'Onderdeel bestellen',offerte:'Offerte maken',opgelost:'Storing opgelost'}};
+  return maps[key]?.[value] || value;
+}
+function renderSurveyDetails(purpose,details={}){
+  const labels={systemType:'Type systeem',indoorUnits:'Aantal binnenunits',brandPreference:'Merkvoorkeur',rooms:'Ruimtes / zones',capacityNotes:'Vermogen / bijzonderheden',indoorLocation:'Plek binnenunit(s)',outdoorLocation:'Plek buitenunit',estimatedLineLengthM:'Geschatte leidinglengte (m)',heightAccess:'Hoogte / bereikbaarheid',electricalPresent:'Elektra aanwezig / geschikt',condensatePossible:'Condensafvoer mogelijk',installationMaterials:'Materialen / voorbereiding',existingBrand:'Bestaand merk',existingModel:'Bestaand model',existingRefrigerant:'Koudemiddel',existingAge:'Leeftijd / bouwjaar',replacementReason:'Reden vervanging',desiredSystemType:'Gewenst type',desiredUnits:'Aantal binnenunits',reusePipework:'Leidingwerk hergebruiken',replacementNotes:'Aanpassingen / bijzonderheden',existingBrandModel:'Bestaand merk / model',additionalUnits:'Extra binnenunits',newRooms:'Nieuwe ruimtes',compatibilityNotes:'Compatibiliteit',customerComplaint:'Klacht klant',sinceWhen:'Sinds wanneer',errorCode:'Foutcode',stillWorking:'Werkt wel / niet',measurements:'Metingen',suspectedCause:'Vermoedelijke oorzaak',partsNeeded:'Onderdelen / materialen',followUp:'Vervolgactie',systemCondition:'Staat installatie',maintenanceNeeded:'Benodigd onderhoud',anomalies:'Aandachtspunten',customSituation:'Situatie / vraag',customRequirements:'Benodigdheden / vervolg'};
+  const rows=Object.entries(details||{}).filter(([,v])=>String(v??'').trim()!=='').map(([k,v])=>`<div class="survey-detail-row"><span>${esc(labels[k]||k)}</span><b>${esc(detailValueLabel(k,String(v)))}</b></div>`).join('');
+  return rows?`<div class="survey-detail-list">${rows}</div>`:'';
+}
 
 async function surveyDetailPage(appointmentId){
   const a=appointments().find(x=>x.id===appointmentId);
@@ -1247,7 +1331,7 @@ async function surveyDetailPage(appointmentId){
     const c=customer(a.customerId)||{};
     app.innerHTML=`<section class="screen survey-detail-screen">
       <article class="card"><div class="row between"><div><p class="eyebrow">OPNAMEDOSSIER</p><h2>${esc(c.name||'Klant')}</h2><p class="muted">${fmt(a.date)} · ${a.time||'Tijd onbekend'} · ${esc(fullAddress(c))}</p></div><span class="pill">${surveyStatusLabel(survey?.status)}</span></div></article>
-      <article class="card"><p class="title">Opname</p><div class="detail-grid" style="margin-top:12px"><div class="mini"><span>Waarvoor</span><b>${surveyPurposeLabel(survey?.purpose)}</b></div><div class="mini"><span>Status</span><b>${surveyStatusLabel(survey?.status)}</b></div></div>${survey?.scope?`<div class="notice" style="margin-top:12px"><b>Omschrijving</b><br>${esc(survey.scope)}</div>`:''}${survey?.findings?`<div class="notice" style="margin-top:12px"><b>Constateringen</b><br>${esc(survey.findings)}</div>`:''}${survey?.technical_notes?`<div class="notice" style="margin-top:12px"><b>Technische notities</b><br>${esc(survey.technical_notes)}</div>`:''}</article>
+      <article class="card"><div class="row between"><div><p class="eyebrow">TYPE OPNAME</p><p class="title">${surveyPurposeLabel(survey?.purpose)}</p></div></div>${renderSurveyDetails(survey?.purpose,survey?.details||{})}${survey?.scope?`<div class="notice survey-note"><b>Klantwens / omschrijving</b><br>${esc(survey.scope)}</div>`:''}${survey?.findings?`<div class="notice survey-note"><b>Constateringen</b><br>${esc(survey.findings)}</div>`:''}${survey?.technical_notes?`<div class="notice survey-note"><b>Technische notities</b><br>${esc(survey.technical_notes)}</div>`:''}</article>
       <article class="card"><div class="row between"><p class="title">Foto's</p><span class="muted">${photos.length}</span></div><div class="survey-photo-grid">${photos.map(p=>`<a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a>`).join('') || '<p class="muted">Nog geen foto’s toegevoegd.</p>'}</div></article>
       <button class="primary" onclick="nav('surveyEdit',{appointmentId:'${appointmentId}'})">${survey?'✏️ Opname bijwerken':'📋 Opname invullen'}</button>
     </section>`;
@@ -1260,21 +1344,26 @@ async function surveyEditPage(appointmentId){
   app.innerHTML='<section class="screen"><article class="card"><p class="title">Opname laden…</p></article></section>';
   try{
     const [survey,photos]=await Promise.all([getSurvey(appointmentId),listSurveyPhotos(appointmentId)]);
-    const value=survey||{purpose:'nieuwe_installatie',scope:'',findings:'',technical_notes:'',status:'planned'};
+    const value=survey||{purpose:'nieuwe_installatie',scope:'',findings:'',technical_notes:'',status:'planned',details:{}};
     app.innerHTML=`<section class="screen survey-edit-screen"><form id="surveyForm" class="form">
-      <article class="card"><p class="eyebrow">OPNAME</p><h2>Situatie vastleggen</h2><p class="muted">Leg alleen informatie vast die nodig is voor voorbereiding en uitvoering.</p>
+      <article class="card"><p class="eyebrow">OPNAME</p><h2>Situatie vastleggen</h2><p class="muted">Kies eerst het soort opname. Optero toont daarna alleen de vragen die bij deze situatie horen.</p>
         <div class="field"><label>Waarvoor is de opname?</label><select name="purpose">${[['nieuwe_installatie','Nieuwe installatie'],['vervanging','Vervanging'],['uitbreiding','Uitbreiding'],['storing_onderzoek','Storing / onderzoek'],['onderhoud','Onderhoud'],['anders','Anders']].map(([v,l])=>`<option value="${v}" ${value.purpose===v?'selected':''}>${l}</option>`).join('')}</select></div>
-        <div class="field"><label>Omschrijving / klantwens</label><textarea name="scope" rows="3" placeholder="Bijv. airco voor slaapkamer, buitenunit liefst op plat dak">${esc(value.scope||'')}</textarea></div>
-        <div class="field"><label>Constateringen</label><textarea name="findings" rows="4" placeholder="Wat is ter plaatse vastgesteld?">${esc(value.findings||'')}</textarea></div>
-        <div class="field"><label>Technische notities</label><textarea name="technicalNotes" rows="4" placeholder="Leidingroute, elektra, condensafvoer, bereikbaarheid, benodigde materialen…">${esc(value.technical_notes||'')}</textarea></div>
+      </article>
+      <article class="card survey-dynamic-card"><div id="surveyDynamicFields">${dynamicSurveyFields(value.purpose,value.details||{})}</div></article>
+      <article class="card"><p class="title">Afronding opname</p>
+        <div class="field"><label>Klantwens / algemene omschrijving</label><textarea name="scope" rows="3" placeholder="Wat wil de klant bereiken?">${esc(value.scope||'')}</textarea></div>
+        <div class="field"><label>Constateringen medewerker</label><textarea name="findings" rows="4" placeholder="Wat is ter plaatse vastgesteld?">${esc(value.findings||'')}</textarea></div>
+        <div class="field"><label>Overige technische notities</label><textarea name="technicalNotes" rows="3" placeholder="Alleen aanvullende informatie die nog niet hierboven staat">${esc(value.technical_notes||'')}</textarea></div>
         <div class="field"><label>Status</label><select name="status"><option value="planned" ${value.status==='planned'?'selected':''}>Gepland</option><option value="in_progress" ${value.status==='in_progress'?'selected':''}>Bezig</option><option value="completed" ${value.status==='completed'?'selected':''}>Afgerond</option></select></div>
       </article>
-      <article class="card"><p class="title">Foto's toevoegen</p><p class="muted">Maak foto's van de situatie, leidingroute, meterkast of andere belangrijke details. Maximaal 8 MB per foto.</p><input id="surveyPhotos" type="file" accept="image/*" capture="environment" multiple><div class="survey-photo-grid" style="margin-top:12px">${photos.map(p=>`<div class="survey-photo-item"><a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a><button type="button" class="smallbtn" data-photo-id="${p.id}" data-photo-path="${p.storage_path}">Verwijder</button></div>`).join('')}</div></article>
+      <article class="card"><p class="title">Foto's toevoegen</p><p class="muted">Maak foto's van de situatie, typeplaatjes, leidingroute, meterkast en andere relevante details. Maximaal 8 MB per foto.</p><input id="surveyPhotos" type="file" accept="image/*" capture="environment" multiple><div class="survey-photo-grid" style="margin-top:12px">${photos.map(p=>`<div class="survey-photo-item"><a href="${p.url}" target="_blank"><img src="${p.url}" alt="Opnamefoto"></a><button type="button" class="smallbtn" data-photo-id="${p.id}" data-photo-path="${p.storage_path}">Verwijder</button></div>`).join('')}</div></article>
       <button class="primary" type="submit">Opname opslaan</button>
     </form></section>`;
     document.querySelectorAll('[data-photo-id]').forEach(btn=>btn.onclick=async()=>{ if(!confirm('Foto verwijderen?')) return; try{ await deleteSurveyPhoto(btn.dataset.photoId,btn.dataset.photoPath); await surveyEditPage(appointmentId); }catch(e){alert(e.message||'Foto verwijderen mislukt.');} });
     const f=$('#surveyForm');
-    f.onsubmit=async e=>{ e.preventDefault(); const submit=f.querySelector('button[type="submit"]'); submit.disabled=true; submit.textContent='Opslaan…'; try{ await saveSurvey(appointmentId,{purpose:field(f,'purpose').value,scope:field(f,'scope').value.trim(),findings:field(f,'findings').value.trim(),technicalNotes:field(f,'technicalNotes').value.trim(),status:field(f,'status').value}); const files=$('#surveyPhotos')?.files; if(files?.length) await uploadSurveyPhotos(appointmentId,files); nav('surveyDetail',{appointmentId}); }catch(error){ alert(`Opname opslaan lukt niet.\n\n${error?.message||'Onbekende fout'}`); submit.disabled=false; submit.textContent='Opname opslaan'; } };
+    const purposeField=field(f,'purpose');
+    purposeField.onchange=()=>{ $('#surveyDynamicFields').innerHTML=dynamicSurveyFields(purposeField.value,{}); };
+    f.onsubmit=async e=>{ e.preventDefault(); const submit=f.querySelector('button[type="submit"]'); submit.disabled=true; submit.textContent='Opslaan…'; try{ const purpose=field(f,'purpose').value; await saveSurvey(appointmentId,{purpose,scope:field(f,'scope').value.trim(),findings:field(f,'findings').value.trim(),technicalNotes:field(f,'technicalNotes').value.trim(),status:field(f,'status').value,details:collectDynamicSurveyDetails(f,purpose)}); const files=$('#surveyPhotos')?.files; if(files?.length) await uploadSurveyPhotos(appointmentId,files); nav('surveyDetail',{appointmentId}); }catch(error){ alert(`Opname opslaan lukt niet.\n\n${error?.message||'Onbekende fout'}`); submit.disabled=false; submit.textContent='Opname opslaan'; } };
   }catch(error){ app.innerHTML=`<section class="screen"><article class="card"><p class="title">Opname kan niet worden geopend</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p></article></section>`; }
 }
 

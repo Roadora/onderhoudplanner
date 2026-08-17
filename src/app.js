@@ -1977,6 +1977,38 @@ function priceBookSystemTypeOptions(value='single_split'){
 function priceBookUnitOptions(value='stuk'){
   return surveySelect('unit','Eenheid',value,[['systeem','Systeem'],['stuk','Stuk'],['meter','Meter'],['uur','Uur'],['vast','Vast bedrag']]);
 }
+function priceBookBrandOptions(value=''){
+  const known=BRAND_OPTIONS.includes(value) && value!=='Anders...';
+  const selected=value ? (known?value:'Anders...') : '';
+  return [['','Alle merken / geen specifiek merk'],...BRAND_OPTIONS.map(brand=>[brand,brand==='Anders...'?'Anders / handmatig':brand])]
+    .map(([v,label])=>`<option value="${esc(v)}" ${selected===v?'selected':''}>${esc(label)}</option>`).join('');
+}
+function priceBookModelOptions(brandChoice='',value=''){
+  const knownBrand=BRAND_OPTIONS.includes(brandChoice) && brandChoice!=='Anders...';
+  const models=knownBrand ? (MODEL_OPTIONS[brandChoice]||['Anders...']) : ['Anders...'];
+  const knownModel=models.includes(value) && value!=='Anders...';
+  const selected=value ? (knownModel?value:'Anders...') : '';
+  const emptyLabel=knownBrand?'Alle modellen / geen specifiek model':(brandChoice==='Anders...'?'Geen specifiek model':'Kies eerst een merk of laat leeg');
+  return [['',emptyLabel],...models.map(model=>[model,model==='Anders...'?'Anders / handmatig':model])]
+    .map(([v,label])=>`<option value="${esc(v)}" ${selected===v?'selected':''}>${esc(label)}</option>`).join('');
+}
+function priceBookBrandModelFields(value={}){
+  const brand=String(value.brand||'').trim();
+  const knownBrand=BRAND_OPTIONS.includes(brand) && brand!=='Anders...';
+  const brandChoice=brand ? (knownBrand?brand:'Anders...') : '';
+  const models=knownBrand?(MODEL_OPTIONS[brand]||['Anders...']):['Anders...'];
+  const model=String(value.model||'').trim();
+  const knownModel=models.includes(model) && model!=='Anders...';
+  const modelChoice=model ? (knownModel?model:'Anders...') : '';
+  return `<div class="form-grid-2 price-book-brand-model">
+    <div class="field"><label>Merk (optioneel)</label><select name="brandChoice">${priceBookBrandOptions(brand)}</select></div>
+    <div class="field"><label>Model / serie (optioneel)</label><select name="modelChoice">${priceBookModelOptions(brandChoice,model)}</select></div>
+  </div>
+  <div class="form-grid-2 price-book-brand-model-manual">
+    <div class="field survey-brand-other ${brandChoice==='Anders...'?'show':''}"><label>Ander merk</label><input name="brandOther" value="${esc(!knownBrand?brand:'')}" placeholder="Vul merk in"></div>
+    <div class="field survey-model-other ${modelChoice==='Anders...'?'show':''}"><label>Ander model / serie</label><input name="modelOther" value="${esc(!knownModel?model:'')}" placeholder="Vul model of serie in"></div>
+  </div>`;
+}
 function priceBookItemSubtitle(item){
   if(item.category==='system') return [detailValueLabel('systemType',item.system_type||'single_split'),item.brand,item.model].filter(Boolean).join(' · ');
   return `Per ${item.unit||'stuk'}`;
@@ -1994,7 +2026,7 @@ async function priceBookPage(){
           <input type="hidden" name="itemId" value="${esc(value.id||'')}">
           ${surveySelect('category','Soort prijs',value.category,[['system','Compleet systeem'],['extra','Extra product / werkzaamheid']])}
           ${surveyField('label','Omschrijving',value.label||'','Bijv. Daikin Stylish 3,5 kW of Extra leiding')}
-          <div id="priceBookSystemFields" ${value.category==='system'?'':'hidden'}>${priceBookSystemTypeOptions(value.system_type||'single_split')}<div class="form-grid-2">${surveyField('brand','Merk (optioneel)',value.brand||'','Bijv. Daikin')}${surveyField('model','Model / serie (optioneel)',value.model||'','Bijv. Stylish')}</div></div>
+          <div id="priceBookSystemFields" ${value.category==='system'?'':'hidden'}>${priceBookSystemTypeOptions(value.system_type||'single_split')}${priceBookBrandModelFields(value)}</div>
           <div id="priceBookUnitField" ${value.category==='extra'?'':'hidden'}>${priceBookUnitOptions(value.unit||'stuk')}</div>
           ${surveyField('unitPrice','Standaardprijs (€)',value.unit_price??0,'0','number')}
           <p class="helper">Deze prijs is alleen een voorstel. Bij iedere offerte kan de eigenaar hem direct overschrijven zonder het prijzenboek te wijzigen.</p>
@@ -2011,15 +2043,34 @@ async function priceBookPage(){
         $('#priceBookUnitField').hidden=system;
       };
       category.onchange=applyCategory; applyCategory();
+      const brandChoice=field(f,'brandChoice');
+      const modelChoice=field(f,'modelChoice');
+      const brandOther=field(f,'brandOther');
+      const modelOther=field(f,'modelOther');
+      const brandOtherWrap=brandOther?.closest('.survey-brand-other');
+      const modelOtherWrap=modelOther?.closest('.survey-model-other');
+      const applyBrandModel=()=>{
+        if(!brandChoice || !modelChoice) return;
+        const previousModel=modelChoice.value;
+        if(brandOtherWrap) brandOtherWrap.classList.toggle('show',brandChoice.value==='Anders...');
+        modelChoice.innerHTML=priceBookModelOptions(brandChoice.value,previousModel);
+        if(modelOtherWrap) modelOtherWrap.classList.toggle('show',modelChoice.value==='Anders...');
+      };
+      if(brandChoice) brandChoice.onchange=()=>{ if(modelChoice) modelChoice.value=''; applyBrandModel(); };
+      if(modelChoice) modelChoice.onchange=()=>{ if(modelOtherWrap) modelOtherWrap.classList.toggle('show',modelChoice.value==='Anders...'); };
       const cancel=$('#cancelPriceEdit'); if(cancel) cancel.onclick=()=>renderPage();
       f.onsubmit=async e=>{
         e.preventDefault();
         const submit=f.querySelector('button[type="submit"]'); submit.disabled=true; submit.textContent='Opslaan…';
         try{
           const isSystem=category.value==='system';
+          const selectedBrand=isSystem?(field(f,'brandChoice')?.value||''):'';
+          const brand=isSystem?(selectedBrand==='Anders...'?(field(f,'brandOther')?.value||'').trim():selectedBrand):'';
+          const selectedModel=isSystem?(field(f,'modelChoice')?.value||''):'';
+          const model=isSystem&&brand?(selectedModel==='Anders...'?(field(f,'modelOther')?.value||'').trim():selectedModel):'';
           await savePriceBookItem({
             id:field(f,'itemId').value||null,category:category.value,label:field(f,'label').value.trim(),
-            systemType:isSystem?field(f,'systemType').value:'',brand:isSystem?field(f,'brand').value.trim():'',model:isSystem?field(f,'model').value.trim():'',
+            systemType:isSystem?field(f,'systemType').value:'',brand,model,
             unit:isSystem?'systeem':field(f,'unit').value,unitPrice:Number(field(f,'unitPrice').value)||0,active:true
           });
           items=await listPriceBook(); renderPage();

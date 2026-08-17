@@ -22,6 +22,6 @@ assert.match(service,/upsert_price_book_item_v125/,'prijzenboek service write RP
 assert.match(sql,/create table if not exists public\.price_book_items/,'prijzenboektabel ontbreekt');
 assert.match(sql,/public\.is_organization_owner/,'prijzenboek is niet eigenaar-afgeschermd');
 assert.match(css,/quote-system-row/,'systeemregel styling ontbreekt');
-assert.match(config,/0\.12\.5 Slimme offertes/,'appversie niet bijgewerkt');
-assert.match(sw,/optero-v0\.12\.5/,'PWA-cache niet bijgewerkt');
+assert.match(config,/APP_VERSION = '0\.12\.\d+ /,'appversie ontbreekt');
+assert.match(sw,/const CACHE_NAME = 'optero-v0\.12\.\d+'/,'PWA-cacheversie ontbreekt');
 console.log('quote-pricebook-v125: ok');

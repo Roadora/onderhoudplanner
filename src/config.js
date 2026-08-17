@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.12.2 Werkorderflow';
+export const APP_VERSION = '0.12.3 Opname-layout';
 
 // Bewust gelijk aan v0.7, zodat bestaande lokale data eenmalig aan het eerste
 // bedrijfsaccount op dit apparaat gekoppeld kan worden.

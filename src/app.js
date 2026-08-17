@@ -1415,7 +1415,7 @@ function surveyPurposeLabel(value){
 }
 function surveyStatusLabel(value){ return ({planned:'Gepland',in_progress:'Bezig',completed:'Afgerond'})[value] || 'Gepland'; }
 function ynSelect(name,label,value='unknown'){
-  return `<div class="field"><label>${label}</label><select name="${name}"><option value="unknown" ${value==='unknown'?'selected':''}>Onbekend / nog controleren</option><option value="yes" ${value==='yes'?'selected':''}>Ja</option><option value="no" ${value==='no'?'selected':''}>Nee</option></select></div>`;
+  return `<div class="field"><label>${label}</label><select name="${name}"><option value="unknown" ${value==='unknown'?'selected':''}>Nog controleren</option><option value="yes" ${value==='yes'?'selected':''}>Ja</option><option value="no" ${value==='no'?'selected':''}>Nee</option></select></div>`;
 }
 function surveyField(name,label,value='',placeholder='',type='text'){
   if(type==='textarea') return `<div class="field"><label>${label}</label><textarea name="${name}" rows="3" placeholder="${esc(placeholder)}">${esc(value||'')}</textarea></div>`;
@@ -1542,12 +1542,16 @@ function dynamicSurveyFields(purpose,details={}){
       ${surveySelect('systemCount','Aantal complete systemen',String(systemCount),[['1','1 systeem'],['2','2 systemen'],['3','3 systemen'],['4','4 systemen'],['5','5 systemen'],['6','6 systemen']])}
       <div class="survey-systems-grid">${systems.map((system,i)=>surveySystemCard(system,i)).join('')}</div>
       ${surveyField('installationNotes','Wensen / bijzonderheden',details.installationNotes||details.capacityNotes||'','Bijv. stille uitvoering, kleurwens of plaatsingsvoorkeur','textarea')}
-      <div class="survey-section-head"><b>Montagesituatie</b><span>Algemene voorbereiding voor de uiteindelijke installatie.</span></div>
-      ${surveyField('indoorLocation','Gewenste plek binnenunit(s)',details.indoorLocation||'','Bijv. boven deur, vrije wand slaapkamer','textarea')}
-      ${surveyField('outdoorLocation','Gewenste plek buitenunit(s)',details.outdoorLocation||'','Plat dak, gevel, balkon…','textarea')}
-      <div class="form-grid-2">${surveyField('estimatedLineLengthM','Geschatte totale leidinglengte (m)',details.estimatedLineLengthM||'','Bijv. 18','number')}${surveyField('heightAccess','Hoogte / bereikbaarheid',details.heightAccess||'','Begane grond, steiger nodig…')}</div>
-      <div class="form-grid-2">${ynSelect('electricalPresent','Geschikte elektra aanwezig?',details.electricalPresent||'unknown')}${ynSelect('condensatePossible','Condensafvoer mogelijk?',details.condensatePossible||'unknown')}</div>
-      ${surveyField('installationMaterials','Benodigde materialen / voorbereiding',details.installationMaterials||'','Dakdoorvoer, pomp, goot, beugels…','textarea')}`;
+      <div class="survey-layout-panel">
+        <div class="survey-section-head"><b>Montagesituatie</b><span>Algemene voorbereiding voor de uiteindelijke installatie.</span></div>
+        <div class="survey-layout-stack">
+          ${surveyField('indoorLocation','Gewenste plek binnenunit(s)',details.indoorLocation||'','Bijv. boven deur, vrije wand slaapkamer','textarea')}
+          ${surveyField('outdoorLocation','Gewenste plek buitenunit(s)',details.outdoorLocation||'','Plat dak, gevel, balkon…','textarea')}
+        </div>
+        <div class="form-grid-2 survey-layout-compact-grid">${surveyField('estimatedLineLengthM','Geschatte totale leidinglengte (m)',details.estimatedLineLengthM||'','Bijv. 18','number')}${surveyField('heightAccess','Hoogte / bereikbaarheid',details.heightAccess||'','Bijv. begane grond')}</div>
+        <div class="form-grid-2 survey-layout-compact-grid">${ynSelect('electricalPresent','Geschikte elektra aanwezig?',details.electricalPresent||'unknown')}${ynSelect('condensatePossible','Condensafvoer mogelijk?',details.condensatePossible||'unknown')}</div>
+        ${surveyField('installationMaterials','Benodigde materialen / voorbereiding',details.installationMaterials||'','Dakdoorvoer, pomp, goot, beugels…','textarea')}
+      </div>`;
   }
   if(purpose==='vervanging') return `
     <div class="survey-section-head"><b>Bestaande installatie</b><span>Leg vast wat er nu aanwezig is en waarom het wordt vervangen.</span></div>

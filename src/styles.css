@@ -441,6 +441,19 @@ body.auth-active{background:#edf3fb}
 .survey-skip-hint{margin-top:10px;padding:11px 12px;border-radius:12px;background:#fff8e8;border:1px solid #f6d99b;color:#8a5a00;font-size:13px;line-height:1.4}
 .survey-system-tech{display:grid;gap:8px;padding:14px;border-radius:15px;background:#fff;border:1px solid #dfe7f2}
 .survey-section-head.compact{margin:0 0 4px}
+
+.survey-layout-panel{display:grid;gap:14px;padding:18px;border:1px solid #d7e2f0;border-radius:18px;background:linear-gradient(180deg,#fbfcff 0%,#f7faff 100%);box-shadow:0 4px 14px rgba(25,64,120,.04);margin-top:4px}
+.survey-layout-stack{display:grid;gap:12px}
+.survey-layout-panel .field{display:grid;align-content:start;gap:7px}
+.survey-layout-panel .field label{margin:0;min-height:32px;line-height:1.25}
+.survey-layout-panel .field input,.survey-layout-panel .field select,.survey-layout-panel .field textarea{min-height:52px;padding:14px 15px;border-radius:16px;border-color:#d9e3f0;background:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.7)}
+.survey-layout-panel .field textarea{min-height:96px}
+.survey-layout-panel .survey-section-head{margin:0 0 2px}
+.survey-layout-compact-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
+.survey-layout-compact-grid .field label{min-height:32px;display:flex;align-items:flex-end}
+@media(max-width:560px){.survey-layout-panel{padding:16px}}
+@media(max-width:360px){.survey-layout-compact-grid{grid-template-columns:1fr}.survey-layout-compact-grid .field label{min-height:0;display:block}}
+
 .survey-extra-work-list{display:grid;gap:10px;margin-top:12px}
 .survey-extra-empty{padding:14px;border:1px dashed #cbd8ea;border-radius:14px;background:#f8fbff;color:var(--muted);font-size:13px;text-align:center}
 .survey-extra-work-card{display:grid;gap:10px;padding:14px;border:1px solid #dfe7f2;border-radius:16px;background:#fbfcff}

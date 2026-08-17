@@ -47,6 +47,11 @@ const MODEL_OPTIONS = {
   'Weishaupt':['Biblock','Aeroblock','Anders...']
 };
 
+const SURVEY_ROOM_OPTIONS = [
+  'Woonkamer','Slaapkamer','Keuken','Kantoor','Zolder','Serre','Garage','Praktijkruimte','Winkelruimte','Anders...'
+];
+const SURVEY_CAPACITY_OPTIONS = ['2.0','2.5','3.5','4.2','5.0','6.0','7.1','8.0','10.0','Anders...'];
+
 const DEFAULT_SETTINGS = {
   companyName:'Airco Service',
   contactName:'',
@@ -1248,19 +1253,73 @@ function surveyField(name,label,value='',placeholder='',type='text'){
 function surveySelect(name,label,value,options){
   return `<div class="field"><label>${label}</label><select name="${name}">${options.map(([v,l])=>`<option value="${v}" ${String(value??'')===String(v)?'selected':''}>${l}</option>`).join('')}</select></div>`;
 }
+function surveyOptionSelect(name,label,value,options){
+  return surveySelect(name,label,value,options.map(v=>[v,v]));
+}
+function surveyInstallUnitCount(systemType){
+  if(systemType==='multi_split') return 2;
+  if(systemType==='triple_split') return 3;
+  return 1;
+}
+function normalizedSurveyInstallUnits(details={},count=1){
+  const saved=Array.isArray(details.units)?details.units:[];
+  return Array.from({length:count},(_,i)=>({
+    room:saved[i]?.room || '',
+    capacityKw:saved[i]?.capacityKw || ''
+  }));
+}
+function surveyBrandModelFields(details={}){
+  const brand=details.brandPreference || 'Daikin';
+  const brandKnown=BRAND_OPTIONS.includes(brand);
+  const selectedBrand=brandKnown?brand:'Anders...';
+  const modelList=MODEL_OPTIONS[selectedBrand] || ['Anders...'];
+  const model=details.modelPreference || '';
+  const modelKnown=modelList.includes(model);
+  return `<div class="form-grid-2">
+    ${surveySelect('brandPreference','Merk',selectedBrand,BRAND_OPTIONS.map(v=>[v,v]))}
+    ${surveySelect('modelPreference','Model / serie',modelKnown?model:'Anders...',modelList.map(v=>[v,v]))}
+  </div>
+  <div class="form-grid-2">
+    <div class="field survey-brand-other ${selectedBrand==='Anders...'?'show':''}"><label>Ander merk</label><input name="brandOther" value="${esc(details.brandOther || (!brandKnown?brand:''))}" placeholder="Vul merk in"></div>
+    <div class="field survey-model-other ${(model==='Anders...' || (!modelKnown && model))?'show':''}"><label>Ander model</label><input name="modelOther" value="${esc(details.modelOther || (!modelKnown?model:''))}" placeholder="Vul model in"></div>
+  </div>`;
+}
+function surveyInstallUnitCard(unit,index){
+  const room=unit.room || 'Woonkamer';
+  const roomKnown=SURVEY_ROOM_OPTIONS.includes(room);
+  const capacity=String(unit.capacityKw || '2.5');
+  const capacityKnown=SURVEY_CAPACITY_OPTIONS.includes(capacity);
+  return `<div class="survey-unit-card">
+    <div class="survey-unit-title"><b>Binnenunit ${index+1}</b><span>Ruimte en vermogen</span></div>
+    <div class="form-grid-2">
+      ${surveyOptionSelect(`unitRoom${index+1}`,'Ruimte',roomKnown?room:'Anders...',SURVEY_ROOM_OPTIONS)}
+      ${surveySelect(`unitCapacity${index+1}`,'Vermogen',capacityKnown?capacity:'Anders...',SURVEY_CAPACITY_OPTIONS.map(v=>[v,v==='Anders...'?'Anders...':`${v} kW`]))}
+    </div>
+    <div class="form-grid-2">
+      <div class="field survey-room-other ${room==='Anders...' || !roomKnown?'show':''}"><label>Andere ruimte</label><input name="unitRoomOther${index+1}" value="${esc(!roomKnown?room:'')}" placeholder="Bijv. hobbykamer"></div>
+      <div class="field survey-capacity-other ${capacity==='Anders...' || !capacityKnown?'show':''}"><label>Ander vermogen (kW)</label><input name="unitCapacityOther${index+1}" type="number" min="0" step="0.1" value="${esc(!capacityKnown?capacity:'')}" placeholder="Bijv. 3.0"></div>
+    </div>
+  </div>`;
+}
 function dynamicSurveyFields(purpose,details={}){
-  if(purpose==='nieuwe_installatie') return `
-    <div class="survey-section-head"><b>Gewenste installatie</b><span>Wat wil de klant en wat is technisch nodig?</span></div>
-    ${surveySelect('systemType','Type systeem',details.systemType||'single_split',[['single_split','Single split airco'],['multi_split','Multi split airco'],['warmtepomp','Warmtepomp'],['air_air_heatpump','Lucht-lucht warmtepomp'],['anders','Anders']])}
-    <div class="form-grid-2">${surveyField('indoorUnits','Aantal binnenunits',details.indoorUnits||1,'1','number')}${surveyField('brandPreference','Merkvoorkeur',details.brandPreference||'','Daikin, Mitsubishi, Panasonic…')}</div>
-    ${surveyField('rooms','Ruimtes / zones',details.rooms||'','Bijv. woonkamer + 2 slaapkamers','textarea')}
-    ${surveyField('capacityNotes','Vermogen / bijzonderheden',details.capacityNotes||'','Oppervlakte, gewenste capaciteit of andere wensen','textarea')}
-    <div class="survey-section-head"><b>Montagesituatie</b><span>Voorbereiding voor de uiteindelijke installatie.</span></div>
-    ${surveyField('indoorLocation','Gewenste plek binnenunit(s)',details.indoorLocation||'','Bijv. boven deur, vrije wand slaapkamer','textarea')}
-    ${surveyField('outdoorLocation','Gewenste plek buitenunit',details.outdoorLocation||'','Plat dak, gevel, balkon…','textarea')}
-    <div class="form-grid-2">${surveyField('estimatedLineLengthM','Geschatte leidinglengte (m)',details.estimatedLineLengthM||'','Bijv. 8','number')}${surveyField('heightAccess','Hoogte / bereikbaarheid',details.heightAccess||'','Begane grond, steiger nodig…')}</div>
-    <div class="form-grid-2">${ynSelect('electricalPresent','Geschikte elektra aanwezig?',details.electricalPresent||'unknown')}${ynSelect('condensatePossible','Condensafvoer mogelijk?',details.condensatePossible||'unknown')}</div>
-    ${surveyField('installationMaterials','Benodigde materialen / voorbereiding',details.installationMaterials||'','Dakdoorvoer, pomp, goot, beugels…','textarea')}`;
+  if(purpose==='nieuwe_installatie'){
+    const systemType=details.systemType || 'single_split';
+    const unitCount=surveyInstallUnitCount(systemType);
+    const units=normalizedSurveyInstallUnits(details,unitCount);
+    return `
+      <div class="survey-section-head"><b>Gewenste installatie</b><span>Kies wat nodig is; Optero vult het aantal binnenunits automatisch in.</span></div>
+      ${surveySelect('systemType','Type systeem',systemType,[['single_split','Single split · 1 binnenunit'],['multi_split','Multi split · 2 binnenunits'],['triple_split','Triple split · 3 binnenunits'],['warmtepomp','Warmtepomp'],['anders','Anders']])}
+      <div class="survey-auto-units"><span>Aantal binnenunits</span><b>${unitCount}</b><input type="hidden" name="unitCount" value="${unitCount}"></div>
+      ${surveyBrandModelFields(details)}
+      <div class="survey-units-grid">${units.map((u,i)=>surveyInstallUnitCard(u,i)).join('')}</div>
+      ${surveyField('installationNotes','Wensen / bijzonderheden',details.installationNotes||details.capacityNotes||'','Bijv. stille uitvoering, kleurwens of plaatsingsvoorkeur','textarea')}
+      <div class="survey-section-head"><b>Montagesituatie</b><span>Voorbereiding voor de uiteindelijke installatie.</span></div>
+      ${surveyField('indoorLocation','Gewenste plek binnenunit(s)',details.indoorLocation||'','Bijv. boven deur, vrije wand slaapkamer','textarea')}
+      ${surveyField('outdoorLocation','Gewenste plek buitenunit',details.outdoorLocation||'','Plat dak, gevel, balkon…','textarea')}
+      <div class="form-grid-2">${surveyField('estimatedLineLengthM','Geschatte leidinglengte (m)',details.estimatedLineLengthM||'','Bijv. 8','number')}${surveyField('heightAccess','Hoogte / bereikbaarheid',details.heightAccess||'','Begane grond, steiger nodig…')}</div>
+      <div class="form-grid-2">${ynSelect('electricalPresent','Geschikte elektra aanwezig?',details.electricalPresent||'unknown')}${ynSelect('condensatePossible','Condensafvoer mogelijk?',details.condensatePossible||'unknown')}</div>
+      ${surveyField('installationMaterials','Benodigde materialen / voorbereiding',details.installationMaterials||'','Dakdoorvoer, pomp, goot, beugels…','textarea')}`;
+  }
   if(purpose==='vervanging') return `
     <div class="survey-section-head"><b>Bestaande installatie</b><span>Leg vast wat er nu aanwezig is en waarom het wordt vervangen.</span></div>
     <div class="form-grid-2">${surveyField('existingBrand','Merk',details.existingBrand||'','Bijv. Daikin')}${surveyField('existingModel','Model',details.existingModel||'','Type/model')}</div>
@@ -1300,8 +1359,36 @@ function dynamicSurveyFields(purpose,details={}){
     ${surveyField('customRequirements','Benodigdheden / vervolg',details.customRequirements||'','','textarea')}`;
 }
 function collectDynamicSurveyDetails(form,purpose){
+  if(purpose==='nieuwe_installatie'){
+    const systemType=field(form,'systemType')?.value || 'single_split';
+    const count=surveyInstallUnitCount(systemType);
+    const brandChoice=field(form,'brandPreference')?.value || 'Daikin';
+    const modelChoice=field(form,'modelPreference')?.value || '';
+    const brand=brandChoice==='Anders...' ? (field(form,'brandOther')?.value.trim() || 'Anders') : brandChoice;
+    const model=modelChoice==='Anders...' ? (field(form,'modelOther')?.value.trim() || 'Anders') : modelChoice;
+    const units=Array.from({length:count},(_,i)=>{
+      const n=i+1;
+      const roomChoice=field(form,`unitRoom${n}`)?.value || '';
+      const capacityChoice=field(form,`unitCapacity${n}`)?.value || '';
+      return {
+        room:roomChoice==='Anders...' ? (field(form,`unitRoomOther${n}`)?.value.trim() || 'Anders') : roomChoice,
+        capacityKw:capacityChoice==='Anders...' ? (field(form,`unitCapacityOther${n}`)?.value.trim() || 'Anders') : capacityChoice
+      };
+    });
+    return {
+      systemType, unitCount:count, brandPreference:brand, modelPreference:model, units,
+      installationNotes:field(form,'installationNotes')?.value.trim() || '',
+      indoorLocation:field(form,'indoorLocation')?.value.trim() || '',
+      outdoorLocation:field(form,'outdoorLocation')?.value.trim() || '',
+      estimatedLineLengthM:field(form,'estimatedLineLengthM')?.value || '',
+      heightAccess:field(form,'heightAccess')?.value.trim() || '',
+      electricalPresent:field(form,'electricalPresent')?.value || 'unknown',
+      condensatePossible:field(form,'condensatePossible')?.value || 'unknown',
+      installationMaterials:field(form,'installationMaterials')?.value.trim() || ''
+    };
+  }
   const names={
-    nieuwe_installatie:['systemType','indoorUnits','brandPreference','rooms','capacityNotes','indoorLocation','outdoorLocation','estimatedLineLengthM','heightAccess','electricalPresent','condensatePossible','installationMaterials'],
+    nieuwe_installatie:[],
     vervanging:['existingBrand','existingModel','existingRefrigerant','existingAge','replacementReason','desiredSystemType','desiredUnits','brandPreference','reusePipework','electricalPresent','replacementNotes'],
     uitbreiding:['existingBrandModel','additionalUnits','newRooms','brandPreference','compatibilityNotes','estimatedLineLengthM','electricalPresent'],
     storing_onderzoek:['customerComplaint','sinceWhen','errorCode','existingBrandModel','stillWorking','measurements','suspectedCause','partsNeeded','followUp'],
@@ -1313,10 +1400,22 @@ function collectDynamicSurveyDetails(form,purpose){
 function detailValueLabel(key,value){
   const bool={yes:'Ja',no:'Nee',unknown:'Nog controleren'};
   if(bool[value]) return bool[value];
-  const maps={systemType:{single_split:'Single split airco',multi_split:'Multi split airco',warmtepomp:'Warmtepomp',air_air_heatpump:'Lucht-lucht warmtepomp',anders:'Anders'},desiredSystemType:{single_split:'Single split airco',multi_split:'Multi split airco',warmtepomp:'Warmtepomp',anders:'Anders'},followUp:{nader_onderzoek:'Nader onderzoek',reparatie:'Reparatie inplannen',onderdeel_bestellen:'Onderdeel bestellen',offerte:'Offerte maken',opgelost:'Storing opgelost'}};
+  const maps={systemType:{single_split:'Single split airco',multi_split:'Multi split airco',triple_split:'Triple split airco',warmtepomp:'Warmtepomp',air_air_heatpump:'Lucht-lucht warmtepomp',anders:'Anders'},desiredSystemType:{single_split:'Single split airco',multi_split:'Multi split airco',triple_split:'Triple split airco',warmtepomp:'Warmtepomp',anders:'Anders'},followUp:{nader_onderzoek:'Nader onderzoek',reparatie:'Reparatie inplannen',onderdeel_bestellen:'Onderdeel bestellen',offerte:'Offerte maken',opgelost:'Storing opgelost'}};
   return maps[key]?.[value] || value;
 }
 function renderSurveyDetails(purpose,details={}){
+  if(purpose==='nieuwe_installatie'){
+    const type=detailValueLabel('systemType',details.systemType||'single_split');
+    const units=Array.isArray(details.units)?details.units:[];
+    const main=[
+      ['Type systeem',type],['Aantal binnenunits',details.unitCount||surveyInstallUnitCount(details.systemType)],
+      ['Merk',details.brandPreference],['Model / serie',details.modelPreference]
+    ].filter(([,v])=>String(v??'').trim()!=='').map(([l,v])=>`<div class="survey-detail-row"><span>${esc(l)}</span><b>${esc(String(v))}</b></div>`).join('');
+    const unitRows=units.map((u,i)=>`<div class="survey-detail-row"><span>Binnenunit ${i+1}</span><b>${esc(u.room||'-')} · ${esc(u.capacityKw||'-')}${u.capacityKw && u.capacityKw!=='Anders'?' kW':''}</b></div>`).join('');
+    const extraLabels={installationNotes:'Wensen / bijzonderheden',indoorLocation:'Plek binnenunit(s)',outdoorLocation:'Plek buitenunit',estimatedLineLengthM:'Geschatte leidinglengte (m)',heightAccess:'Hoogte / bereikbaarheid',electricalPresent:'Elektra aanwezig / geschikt',condensatePossible:'Condensafvoer mogelijk',installationMaterials:'Materialen / voorbereiding'};
+    const extras=Object.entries(extraLabels).filter(([k])=>String(details[k]??'').trim()!=='').map(([k,l])=>`<div class="survey-detail-row"><span>${esc(l)}</span><b>${esc(detailValueLabel(k,String(details[k])))}</b></div>`).join('');
+    return `<div class="survey-detail-list">${main}${unitRows}${extras}</div>`;
+  }
   const labels={systemType:'Type systeem',indoorUnits:'Aantal binnenunits',brandPreference:'Merkvoorkeur',rooms:'Ruimtes / zones',capacityNotes:'Vermogen / bijzonderheden',indoorLocation:'Plek binnenunit(s)',outdoorLocation:'Plek buitenunit',estimatedLineLengthM:'Geschatte leidinglengte (m)',heightAccess:'Hoogte / bereikbaarheid',electricalPresent:'Elektra aanwezig / geschikt',condensatePossible:'Condensafvoer mogelijk',installationMaterials:'Materialen / voorbereiding',existingBrand:'Bestaand merk',existingModel:'Bestaand model',existingRefrigerant:'Koudemiddel',existingAge:'Leeftijd / bouwjaar',replacementReason:'Reden vervanging',desiredSystemType:'Gewenst type',desiredUnits:'Aantal binnenunits',reusePipework:'Leidingwerk hergebruiken',replacementNotes:'Aanpassingen / bijzonderheden',existingBrandModel:'Bestaand merk / model',additionalUnits:'Extra binnenunits',newRooms:'Nieuwe ruimtes',compatibilityNotes:'Compatibiliteit',customerComplaint:'Klacht klant',sinceWhen:'Sinds wanneer',errorCode:'Foutcode',stillWorking:'Werkt wel / niet',measurements:'Metingen',suspectedCause:'Vermoedelijke oorzaak',partsNeeded:'Onderdelen / materialen',followUp:'Vervolgactie',systemCondition:'Staat installatie',maintenanceNeeded:'Benodigd onderhoud',anomalies:'Aandachtspunten',customSituation:'Situatie / vraag',customRequirements:'Benodigdheden / vervolg'};
   const rows=Object.entries(details||{}).filter(([,v])=>String(v??'').trim()!=='').map(([k,v])=>`<div class="survey-detail-row"><span>${esc(labels[k]||k)}</span><b>${esc(detailValueLabel(k,String(v)))}</b></div>`).join('');
   return rows?`<div class="survey-detail-list">${rows}</div>`:'';
@@ -1362,7 +1461,18 @@ async function surveyEditPage(appointmentId){
     document.querySelectorAll('[data-photo-id]').forEach(btn=>btn.onclick=async()=>{ if(!confirm('Foto verwijderen?')) return; try{ await deleteSurveyPhoto(btn.dataset.photoId,btn.dataset.photoPath); await surveyEditPage(appointmentId); }catch(e){alert(e.message||'Foto verwijderen mislukt.');} });
     const f=$('#surveyForm');
     const purposeField=field(f,'purpose');
-    purposeField.onchange=()=>{ $('#surveyDynamicFields').innerHTML=dynamicSurveyFields(purposeField.value,{}); };
+    const wireSurveyDynamic=()=>{
+      const box=$('#surveyDynamicFields');
+      if(!box) return;
+      const rerender=()=>{ const details=collectDynamicSurveyDetails(f,purposeField.value); box.innerHTML=dynamicSurveyFields(purposeField.value,details); wireSurveyDynamic(); };
+      const systemType=field(f,'systemType'); if(systemType) systemType.onchange=rerender;
+      const brand=field(f,'brandPreference'); if(brand) brand.onchange=rerender;
+      const model=field(f,'modelPreference'); if(model) model.onchange=()=>{ box.querySelector('.survey-model-other')?.classList.toggle('show',model.value==='Anders...'); };
+      box.querySelectorAll('select[name^="unitRoom"]').forEach(sel=>sel.onchange=()=>sel.closest('.survey-unit-card')?.querySelector('.survey-room-other')?.classList.toggle('show',sel.value==='Anders...'));
+      box.querySelectorAll('select[name^="unitCapacity"]').forEach(sel=>sel.onchange=()=>sel.closest('.survey-unit-card')?.querySelector('.survey-capacity-other')?.classList.toggle('show',sel.value==='Anders...'));
+    };
+    purposeField.onchange=()=>{ $('#surveyDynamicFields').innerHTML=dynamicSurveyFields(purposeField.value,{}); wireSurveyDynamic(); };
+    wireSurveyDynamic();
     f.onsubmit=async e=>{ e.preventDefault(); const submit=f.querySelector('button[type="submit"]'); submit.disabled=true; submit.textContent='Opslaan…'; try{ const purpose=field(f,'purpose').value; await saveSurvey(appointmentId,{purpose,scope:field(f,'scope').value.trim(),findings:field(f,'findings').value.trim(),technicalNotes:field(f,'technicalNotes').value.trim(),status:field(f,'status').value,details:collectDynamicSurveyDetails(f,purpose)}); const files=$('#surveyPhotos')?.files; if(files?.length) await uploadSurveyPhotos(appointmentId,files); nav('surveyDetail',{appointmentId}); }catch(error){ alert(`Opname opslaan lukt niet.\n\n${error?.message||'Onbekende fout'}`); submit.disabled=false; submit.textContent='Opname opslaan'; } };
   }catch(error){ app.innerHTML=`<section class="screen"><article class="card"><p class="title">Opname kan niet worden geopend</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p></article></section>`; }
 }

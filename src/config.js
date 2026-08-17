@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.10.0 Transactionele cloudopslag';
+export const APP_VERSION = '0.10.1 Professionele planning';
 
 // Bewust gelijk aan v0.7, zodat bestaande lokale data eenmalig aan het eerste
 // bedrijfsaccount op dit apparaat gekoppeld kan worden.

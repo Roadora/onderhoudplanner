@@ -304,7 +304,7 @@ function render(){
   const titles = {
     dashboard:'Dashboard', customers:'Klanten', agenda:'Agenda', settings:'Instellingen', account:currentRole === 'technician' ? 'Mijn account' : 'Bedrijfsaccount', team:'Medewerkers', myDay:'Mijn dag',
     new:'Nieuwe installatie', detail:'Klantdetail', editCustomer:'Klant bewerken',
-    editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails', notifications:'Actielijst'
+    editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', newAppointment:'Afspraak inplannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails', notifications:'Actielijst'
   };
   pageTitle.textContent = titles[route.name] || 'Optero';
 
@@ -425,7 +425,7 @@ function quickActionCard(s){
     <div class="status-row">${contactStatusSelect(s)}<span>${euro(systemPrice(s))}</span></div>
     <div class="actions">
       <a class="secondary whatsapp ${hasPhone?'':'disabled'}" ${hasPhone?`href="${whatsappLink(c,s)}" onclick="markContacted('${s.id}')"`:'aria-disabled="true"'}>💬 WhatsApp</a>
-      <button class="secondary" onclick="nav('planAppointment',{systemId:'${s.id}',back:'dashboard'})">📅 Inplannen</button>
+      <button class="secondary" onclick="nav('newAppointment',{systemId:'${s.id}',customerId:'${s.customerId}',type:'onderhoud',date:'${nextDate(s)}',scheduleSource:'maintenance',back:'dashboard'})">📅 Afspraak maken</button>
     </div>
   </article>`;
 }
@@ -549,7 +549,7 @@ function agendaDayCard(s){
       <a class="secondary whatsapp" href="${whatsappLink(c)}">💬 WhatsApp</a>
     </div>
     <div class="actions">
-      <button class="secondary" onclick="nav('planAppointment',{systemId:'${s.id}',back:'agenda'})">📅 Afspraak plannen</button>
+      <button class="secondary" onclick="nav('newAppointment',{systemId:'${s.id}',customerId:'${s.customerId}',type:'onderhoud',date:'${nextDate(s)}',scheduleSource:'maintenance',back:'agenda'})">📅 Onderhoud plannen</button>
       <button class="smallbtn" onclick="nav('detail',{customerId:'${s.customerId}',back:'agenda'})">Open klant</button>
     </div>
   </article>`;
@@ -682,8 +682,8 @@ function goToday(){
 
 function appointmentInfo(s){
   const a=appointmentForSystem(s.id);
-  if(!a) return '<div class="notice appointment-empty" style="margin-top:12px">Nog geen afspraak ingepland.</div>';
-  return `<div class="notice appointment-set" style="margin-top:12px"><b>Geplande afspraak</b><br>${fmt(a.date)} om ${a.time||'tijd onbekend'}<br>${a.note||'Onderhoudsafspraak'}</div>`;
+  if(!a) return '<div class="notice appointment-empty" style="margin-top:12px">Geen echte klus ingepland voor dit systeem.</div>';
+  return `<div class="notice appointment-set" style="margin-top:12px"><b>Echte geplande klus</b><br>${appointmentTitle(a.type||'onderhoud')} · ${fmt(a.date)} om ${a.time||'tijd onbekend'}<br>${esc(a.note||'')}</div>`;
 }
 
 function detail(id){
@@ -726,9 +726,9 @@ function detail(id){
       <p class="card-meta">${isSystemActiveForPlanning(s)?dueLabel(s):statusBadge(s)}</p>
       <div class="detail-grid">
         <div class="mini"><span>Serienummer</span><b>${esc(s.serial||'-')}</b></div>
-        <div class="mini"><span>Installatie</span><b>${fmt(s.installedAt)}</b></div>
+        <div class="mini"><span>Plaatsingsdatum</span><b>${fmt(s.installedAt)}</b></div>
         <div class="mini"><span>Interval</span><b>Elke ${s.interval} maanden</b></div>
-        <div class="mini"><span>Volgend onderhoud</span><b>${fmt(nextDate(s))}</b></div>
+        <div class="mini"><span>Onderhoudsadvies</span><b>${fmt(nextDate(s))}</b></div>
         <div class="mini"><span>Onderhoudsprijs</span><b>${euro(systemPrice(s))}</b></div>
         <div class="mini"><span>Uitgevoerd</span><b>${Number(s.doneCount)||0} keer</b></div>
       </div>
@@ -737,7 +737,14 @@ function detail(id){
       <div class="status-row">${contactStatusSelect(s)}${s.lastContactAt?`<small>Laatst: ${fmtShort(s.lastContactAt)}</small>`:''}</div>
       <div class="actions">
         <a class="secondary whatsapp ${hasPhone?'':'disabled'}" ${hasPhone?`href="${whatsappLink(c,s)}" onclick="markContacted('${s.id}')"`:'aria-disabled="true"'}>💬 Herinner klant</a>
-        <button class="secondary" onclick="nav('planAppointment',{systemId:'${s.id}',back:'detail'})">📅 Inplannen</button>
+      </div>
+      <div class="planning-choice">
+        <p class="planning-choice-title">Werk inplannen</p>
+        <p class="helper">Plaatsingsdatum en onderhoudsadvies zijn gegevens. Een klus verschijnt pas in de agenda nadat je hieronder een echte afspraak maakt.</p>
+        <div class="planning-choice-actions">
+          <button class="secondary" onclick="nav('newAppointment',{systemId:'${s.id}',customerId:'${s.customerId}',type:'plaatsing',date:'${s.installedAt||todayKey()}',scheduleSource:'installation',back:'detail'})">🛠 Plaatsing inplannen</button>
+          <button class="secondary" onclick="nav('newAppointment',{systemId:'${s.id}',customerId:'${s.customerId}',type:'onderhoud',date:'${nextDate(s)}',scheduleSource:'maintenance',back:'detail'})">🔧 Onderhoud plannen</button>
+        </div>
       </div>
       <button class="primary secondary-primary" onclick="markDone('${s.id}')">✅ Onderhoud uitgevoerd</button>
       <button class="danger full-width block-gap" onclick="deleteSystem('${s.id}')">🗑 Systeem verwijderen</button>
@@ -816,7 +823,7 @@ function systemFormFields(s={}){
     <div class="field"><label>Model</label><select name="model">${modelSelectOptions(brand, model)}</select></div>
     <div class="field model-other ${knownModel?'':'show'}"><label>Eigen model</label><input name="modelOther" value="${knownModel?'':esc(model)}" placeholder="Vul eigen model in"></div>
     <div class="field"><label>Serienummer</label><input name="serial" value="${esc(s.serial||'')}" placeholder="Bijv. FTXG25LW"></div>
-    <div class="field"><label>Installatiedatum</label><input name="installedAt" type="date" value="${s.installedAt||todayKey()}" required></div>
+    <div class="field"><label>Plaatsingsdatum</label><input name="installedAt" type="date" value="${s.installedAt||todayKey()}" required><p class="helper">Dit registreert wanneer het systeem is of wordt geplaatst. Dit maakt nog geen afspraak in de agenda.</p></div>
     <div class="two">
       <div class="field"><label>Onderhoudsinterval</label><select name="interval">
         <option value="6" ${interval===6?'selected':''}>6 maanden</option>
@@ -997,17 +1004,25 @@ function newInstall(){
 
 
 
-async function assignmentEditorData(appointmentId=''){
+async function assignmentEditorData(appointmentId='', {preselectSoleTechnician=false}={}){
   if(currentRole === 'technician') return {members:[],selected:new Set()};
   try{
     const [members, assignments] = await Promise.all([
       listTeamMembers(),
       appointmentId ? getAppointmentAssignments(appointmentId) : Promise.resolve([])
     ]);
-    return {
-      members:(members||[]).filter(m=>m.status==='active' && ['technician','planner','owner'].includes(m.role)),
-      selected:new Set((assignments||[]).map(a=>a.user_id))
-    };
+    const active=(members||[])
+      .filter(m=>m.status==='active' && ['technician','planner','owner'].includes(m.role))
+      .sort((a,b)=>{
+        const rank={technician:0,planner:1,owner:2};
+        return (rank[a.role]??9)-(rank[b.role]??9) || String(a.display_name||a.email||'').localeCompare(String(b.display_name||b.email||''),'nl');
+      });
+    const selected=new Set((assignments||[]).map(a=>a.user_id));
+    if(preselectSoleTechnician && !selected.size){
+      const technicians=active.filter(m=>m.role==='technician');
+      if(technicians.length===1) selected.add(technicians[0].user_id);
+    }
+    return {members:active,selected};
   }catch(error){
     console.warn('Werktoewijzing laden mislukt', error);
     return {members:[],selected:new Set()};
@@ -1015,8 +1030,22 @@ async function assignmentEditorData(appointmentId=''){
 }
 
 function assignmentEditorHtml(members=[], selected=new Set()){
-  if(!members.length) return `<div class="field"><label>Medewerkers</label><p class="helper">Nog geen actieve medewerkers beschikbaar.</p></div>`;
-  return `<div class="field"><label>Toewijzen aan</label><div class="assignment-list">${members.map(m=>`<label class="assignment-option"><input type="checkbox" name="assignedUsers" value="${esc(m.user_id)}" ${selected.has(m.user_id)?'checked':''}><span><b>${esc(m.display_name||m.email||'Gebruiker')}</b><small>${m.role==='technician'?'Monteur':m.role==='planner'?'Planner':'Eigenaar'}</small></span></label>`).join('')}</div><p class="helper">Je kunt één of meerdere medewerkers aan deze opdracht koppelen.</p></div>`;
+  if(!members.length) return `<div class="field assignment-field"><label>Monteur / uitvoerder</label><p class="helper">Nog geen actieve medewerkers beschikbaar. Je kunt de afspraak wel opslaan en later iemand toewijzen.</p></div>`;
+  return `<div class="field assignment-field">
+    <div class="row between assignment-heading"><label>Monteur / uitvoerder</label><span class="assignment-count">${selected.size ? `${selected.size} geselecteerd` : 'Nog niemand'}</span></div>
+    <p class="helper">Tik op een naam om de klus toe te wijzen. Je kunt ook meerdere monteurs selecteren.</p>
+    <div class="assignment-list">${members.map(m=>`<label class="assignment-option"><input type="checkbox" name="assignedUsers" value="${esc(m.user_id)}" ${selected.has(m.user_id)?'checked':''}><span class="assignment-person"><b>${esc(m.display_name||m.email||'Gebruiker')}</b><small>${m.role==='technician'?'Monteur':m.role==='planner'?'Planner':'Eigenaar'}</small></span><span class="assignment-check">✓</span></label>`).join('')}</div>
+  </div>`;
+}
+
+function bindAssignmentSelection(form){
+  const count=form?.querySelector('.assignment-count');
+  const update=()=>{
+    const selected=[...form.querySelectorAll('input[name="assignedUsers"]:checked')];
+    if(count) count.textContent=selected.length ? `${selected.length} geselecteerd` : 'Nog niemand';
+  };
+  form?.querySelectorAll('input[name="assignedUsers"]').forEach(input=>input.addEventListener('change',update));
+  update();
 }
 
 function selectedAssignmentUserIds(form){
@@ -1045,24 +1074,43 @@ async function persistAppointmentForm(appointmentId, form){
 
 async function newAppointment(){
   const existing = route.appointmentId ? appointments().find(a=>a.id===route.appointmentId) : null;
-  const customerId = existing?.customerId || route.customerId || state.customers[0]?.id || '';
+  const routedSystem = route.systemId ? systemById(route.systemId) : null;
+  const customerId = existing?.customerId || route.customerId || routedSystem?.customerId || state.customers[0]?.id || '';
+  const systemId = existing?.systemId || route.systemId || '';
   const dateValue = existing?.date || route.date || selectedAgendaDate || todayKey();
   const timeValue = existing?.time || '09:00';
-  const typeValue = existing?.type || 'plaatsing';
-  const noteValue = existing?.note || '';
-  const assignmentData = await assignmentEditorData(existing?.id || '');
+  const typeValue = existing?.type || route.type || 'plaatsing';
+  const defaultNote = route.scheduleSource==='installation' && routedSystem
+    ? `Plaatsing ${routedSystem.brand||''} ${routedSystem.model||''}`.trim()
+    : route.scheduleSource==='maintenance' && routedSystem
+      ? `Onderhoud ${routedSystem.brand||''} ${routedSystem.model||''}`.trim()
+      : '';
+  const noteValue = existing?.note || defaultNote;
+  const assignmentData = await assignmentEditorData(existing?.id || '', {preselectSoleTechnician:!existing});
 
-  app.innerHTML = `<section class="screen">
+  const schedulingNotice = !existing && route.scheduleSource==='installation' && routedSystem
+    ? `<div class="planning-context installation"><b>🛠 Plaatsing inplannen</b><span>Geregistreerde plaatsingsdatum: ${fmt(routedSystem.installedAt)}. Kies hieronder de echte datum en tijd waarop de monteur de klus uitvoert.</span></div>`
+    : !existing && route.scheduleSource==='maintenance' && routedSystem
+      ? `<div class="planning-context maintenance"><b>🔧 Onderhoud plannen</b><span>Optero adviseert onderhoud rond ${fmt(nextDate(routedSystem))}. Dit is alleen een adviesdatum; jij kiest hieronder de echte afspraak.</span></div>`
+      : `<div class="planning-context"><b>📅 Echte afspraak</b><span>Alleen afspraken die je hier opslaat verschijnen in de agenda van kantoor en de toegewezen monteur.</span></div>`;
+
+  function systemOptionsFor(cid, selected=''){
+    const systems=systemsForCustomer(cid);
+    return `<option value="">Geen systeem gekoppeld</option>${systems.map(sys=>`<option value="${sys.id}" ${sys.id===selected?'selected':''}>${sys.type==='warmtepomp'?'Warmtepomp':'Airco'} · ${esc(sys.brand)} ${esc(sys.model)}</option>`).join('')}`;
+  }
+
+  app.innerHTML = `<section class="screen planning-screen">
     <form class="form" id="genericAppointmentForm">
-      <article class="card form">
-        <h2>Afspraak</h2>
+      ${schedulingNotice}
+      <article class="card form planning-form-card">
+        <div class="row between planning-form-title"><div><p class="eyebrow">PLANNING</p><h2>${existing?'Afspraak bewerken':'Nieuwe afspraak'}</h2></div>${existing?`<span class="pill">Bewerken</span>`:''}</div>
         <div class="field">
-          <label>Type afspraak</label>
+          <label>Soort klus</label>
           <select name="type">
             <option value="plaatsing" ${typeValue==='plaatsing'?'selected':''}>Plaatsing</option>
             <option value="onderhoud" ${typeValue==='onderhoud'?'selected':''}>Onderhoud</option>
             <option value="storing" ${typeValue==='storing'?'selected':''}>Storing</option>
-            <option value="controle" ${typeValue==='controle'?'selected':''}>Controle</option>
+            <option value="controle" ${typeValue==='controle'?'selected':''}>Controle / inspectie</option>
           </select>
         </div>
         <div class="field">
@@ -1086,69 +1134,89 @@ async function newAppointment(){
           </div>
           <div class="field"><label>Memo klant</label><textarea name="newMemo" rows="2" placeholder="Interne notitie"></textarea></div>
         </div>
-        <div class="two">
-          <div class="field"><label>Datum</label><input name="date" type="date" value="${dateValue}" required></div>
-          <div class="field"><label>Tijd</label><input name="time" type="time" value="${timeValue}"></div>
+        <div class="field system-picker-wrap">
+          <label>Systeem / installatie <span class="optional">optioneel</span></label>
+          <select name="systemId">${systemOptionsFor(customerId,systemId)}</select>
+          <p class="helper">Koppel het systeem zodat de monteur direct de juiste installatiegegevens bij de klus ziet.</p>
         </div>
-        <div class="field"><label>Notitie</label><textarea name="note" rows="3" placeholder="Bijv. nieuwe airco plaatsen slaapkamer">${esc(noteValue)}</textarea></div>
+        <div class="two planning-date-time">
+          <div class="field"><label>Datum</label><input name="date" type="date" value="${dateValue}" required></div>
+          <div class="field"><label>Starttijd</label><input name="time" type="time" value="${timeValue}"></div>
+        </div>
         ${assignmentEditorHtml(assignmentData.members, assignmentData.selected)}
+        <div class="field"><label>Werkinstructie / notitie <span class="optional">optioneel</span></label><textarea name="note" rows="3" placeholder="Bijv. buitenunit op plat dak, klant bellen bij aankomst">${esc(noteValue)}</textarea></div>
       </article>
-      <button class="primary" type="submit">Afspraak opslaan</button>
+      <button class="primary planning-submit" type="submit">${existing?'Wijzigingen opslaan':'Afspraak inplannen'}</button>
       ${existing?`<button class="danger" type="button" onclick="deleteGenericAppointment('${existing.id}')">Afspraak verwijderen</button>`:''}
     </form>
   </section>`;
 
   const f=$('#genericAppointmentForm');
+  bindAssignmentSelection(f);
   const toggleNewCustomerFields=()=>{
     const wrap=f.querySelector('.new-customer-fields');
-    if(wrap) wrap.classList.toggle('show', field(f,'customerId').value==='__new__');
+    const isNew=field(f,'customerId').value==='__new__';
+    if(wrap) wrap.classList.toggle('show',isNew);
+    const sys=field(f,'systemId');
+    if(sys && !isNew) sys.innerHTML=systemOptionsFor(field(f,'customerId').value,sys.value);
+    if(sys && isNew) sys.innerHTML='<option value="">Eerst klant opslaan</option>';
   };
   field(f,'customerId').onchange=toggleNewCustomerFields;
   toggleNewCustomerFields();
+
   f.onsubmit=async (e)=>{
     e.preventDefault();
+    const submit=f.querySelector('.planning-submit');
+    if(submit){ submit.disabled=true; submit.textContent='Opslaan…'; }
     let appointmentCustomerId=field(f,'customerId').value;
-    if(appointmentCustomerId==='__new__'){
-      const newCustomer={
-        id:uid(),
-        name:field(f,'newName').value.trim() || 'Nieuwe klant',
-        address:field(f,'newAddress').value.trim(),
-        postalCode:field(f,'newPostalCode').value.trim(),
-        city:field(f,'newCity').value.trim(),
-        phone:field(f,'newPhone').value.trim(),
-        email:field(f,'newEmail').value.trim(),
-        memo:field(f,'newMemo') ? field(f,'newMemo').value.trim() : ''
-      };
-      state.customers.push(newCustomer);
-      appointmentCustomerId=newCustomer.id;
+    try{
+      if(appointmentCustomerId==='__new__'){
+        const newCustomer={
+          id:uid(),
+          name:field(f,'newName').value.trim() || 'Nieuwe klant',
+          address:field(f,'newAddress').value.trim(),
+          postalCode:field(f,'newPostalCode').value.trim(),
+          city:field(f,'newCity').value.trim(),
+          phone:field(f,'newPhone').value.trim(),
+          email:field(f,'newEmail').value.trim(),
+          memo:field(f,'newMemo') ? field(f,'newMemo').value.trim() : ''
+        };
+        state.customers.push(newCustomer);
+        appointmentCustomerId=newCustomer.id;
+      }
+      const selectedSystemId=field(f,'systemId')?.value || null;
+      let savedAppointmentId='';
+      if(existing){
+        existing.type=field(f,'type').value;
+        existing.customerId=appointmentCustomerId;
+        existing.systemId=selectedSystemId;
+        existing.date=field(f,'date').value;
+        existing.time=field(f,'time').value;
+        existing.note=field(f,'note').value.trim();
+        savedAppointmentId=existing.id;
+      }else{
+        const created={
+          id:uid(),
+          type:field(f,'type').value,
+          customerId:appointmentCustomerId,
+          systemId:selectedSystemId,
+          date:field(f,'date').value,
+          time:field(f,'time').value,
+          note:field(f,'note').value.trim()
+        };
+        state.appointments.push(created);
+        savedAppointmentId=created.id;
+      }
+      const selectedSystem=selectedSystemId ? systemById(selectedSystemId) : null;
+      if(selectedSystem && field(f,'type').value==='onderhoud') selectedSystem.contactStatus='scheduled';
+      save();
+      if(!(await persistAppointmentForm(savedAppointmentId, f))) return;
+      selectedAgendaDate=field(f,'date').value;
+      calendarMonth=new Date(field(f,'date').value+'T12:00:00');
+      nav('dayPlan',{date:selectedAgendaDate,back:'agenda'});
+    }finally{
+      if(submit && document.body.contains(submit)){ submit.disabled=false; submit.textContent=existing?'Wijzigingen opslaan':'Afspraak inplannen'; }
     }
-    let savedAppointmentId='';
-    if(existing){
-      existing.type=field(f,'type').value;
-      existing.customerId=appointmentCustomerId;
-      existing.systemId=null;
-      existing.date=field(f,'date').value;
-      existing.time=field(f,'time').value;
-      existing.note=field(f,'note').value.trim();
-      savedAppointmentId=existing.id;
-    }else{
-      const created={
-        id:uid(),
-        type:field(f,'type').value,
-        customerId:appointmentCustomerId,
-        systemId:null,
-        date:field(f,'date').value,
-        time:field(f,'time').value,
-        note:field(f,'note').value.trim()
-      };
-      state.appointments.push(created);
-      savedAppointmentId=created.id;
-    }
-    save();
-    if(!(await persistAppointmentForm(savedAppointmentId, f))) return;
-    selectedAgendaDate=field(f,'date').value;
-    calendarMonth=new Date(field(f,'date').value+'T12:00:00');
-    nav('agenda');
   };
 }
 async function deleteGenericAppointment(id){
@@ -1165,54 +1233,18 @@ ${error?.message||'Onbekende fout'}`); return; }
 async function planAppointment(systemId){
   const s=systemById(systemId);
   if(!s) return nav('agenda');
-  if(s.serviceStatus==='declined'){ alert('Deze klant wil geen onderhoud. Zet de status eerst terug op actief.'); return nav('detail',{customerId:s.customerId,back:'customers'}); }
-  const c=customer(s.customerId)||{};
-  const existing = route.appointmentId ? appointments().find(a=>a.id===route.appointmentId) : appointmentForSystem(systemId);
-  const dateValue = existing ? existing.date : nextDate(s);
-  const timeValue = existing ? existing.time : '09:00';
-  const noteValue = existing ? existing.note : 'Jaarlijks onderhoud';
-  const assignmentData = await assignmentEditorData(existing?.id || '');
-
-  app.innerHTML = `<section class="screen">
-    <form class="form" id="appointmentForm">
-      <article class="card">
-        <p class="title">${esc(c.name)}</p>
-        <p class="muted">${esc(s.brand)} ${esc(s.model)}</p>
-        <p class="muted">📍 ${esc(fullAddress(c))}</p>
-      </article>
-      <article class="card form">
-        <h2>Afspraak</h2>
-        <div class="field"><label>Datum</label><input name="date" type="date" value="${dateValue}" required></div>
-        <div class="field"><label>Tijd</label><input name="time" type="time" value="${timeValue}"></div>
-        <div class="field"><label>Notitie</label><textarea name="note" rows="3" placeholder="Bijv. jaarlijks onderhoud">${esc(noteValue)}</textarea></div>
-        ${assignmentEditorHtml(assignmentData.members, assignmentData.selected)}
-      </article>
-      <button class="primary" type="submit">Afspraak opslaan</button>
-      ${existing?`<button class="danger" type="button" onclick="deleteAppointment('${existing.id}','${systemId}')">Afspraak verwijderen</button>`:''}
-    </form>
-  </section>`;
-
-  const f=$('#appointmentForm');
-  f.onsubmit=async (e)=>{
-    e.preventDefault();
-    let savedAppointmentId='';
-    if(existing){
-      existing.date=field(f,'date').value;
-      existing.time=field(f,'time').value;
-      existing.note=field(f,'note').value.trim();
-      savedAppointmentId=existing.id;
-    }else{
-      const created={id:uid(),type:'onderhoud',customerId:s.customerId,systemId,date:field(f,'date').value,time:field(f,'time').value,note:field(f,'note').value.trim()};
-      state.appointments.push(created);
-      savedAppointmentId=created.id;
-    }
-    s.contactStatus='scheduled';
-    save();
-    if(!(await persistAppointmentForm(savedAppointmentId, f))) return;
-    selectedAgendaDate=field(f,'date').value;
-    calendarMonth=new Date(field(f,'date').value+'T12:00:00');
-    nav('agenda');
-  };
+  if(s.serviceStatus==='declined'){
+    alert('Deze klant wil geen onderhoud. Zet de onderhoudsstatus eerst terug op actief.');
+    return nav('detail',{customerId:s.customerId,back:'customers'});
+  }
+  return nav('newAppointment',{
+    systemId:s.id,
+    customerId:s.customerId,
+    type:'onderhoud',
+    date:nextDate(s),
+    scheduleSource:'maintenance',
+    back:route.back || 'detail'
+  });
 }
 
 async function deleteAppointment(id, systemId){

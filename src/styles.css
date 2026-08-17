@@ -378,3 +378,43 @@ body.auth-active{background:#edf3fb}
 .technician-day-heading h2{margin:0;font-size:1.3rem}
 .technician-day-heading>span{font-size:.82rem;color:var(--muted,#697386);white-space:nowrap;padding-bottom:2px}
 @media (max-width:420px){.my-day-screen{padding-left:14px;padding-right:14px}.technician-calendar{padding:12px}.technician-calendar .calendar-grid,.technician-calendar .calendar-weekdays{gap:3px}.technician-calendar .calendar-day{height:40px;border-radius:10px}.technician-day-heading{align-items:flex-start;flex-direction:column;gap:2px}}
+
+/* v0.10.1 — professionele afspraakflow */
+.planning-screen{padding-bottom:110px}
+.planning-context{display:flex;flex-direction:column;gap:5px;margin-bottom:14px;padding:15px 16px;border:1px solid #dbe7f7;border-radius:16px;background:#f5f9ff;color:#46536a}
+.planning-context b{color:#0d55b5;font-size:15px}
+.planning-context span{font-size:13px;line-height:1.5}
+.planning-context.installation{background:#f1f8ff;border-color:#cfe2fb}
+.planning-context.maintenance{background:#f4fbf6;border-color:#d0ecd7}
+.planning-context.maintenance b{color:#19713a}
+.planning-form-card{gap:16px}
+.planning-form-title{align-items:flex-start;margin-bottom:2px}
+.planning-form-title h2{margin:2px 0 0}
+.planning-form-title .eyebrow{margin:0;color:#1261c9;font-size:12px;font-weight:800;letter-spacing:.08em}
+.optional{font-weight:500;color:#8993a5;font-size:12px}
+.planning-date-time{align-items:end}
+.planning-submit{position:sticky;bottom:82px;z-index:6;box-shadow:0 12px 24px rgba(7,87,200,.22)}
+.planning-choice{margin-top:16px;padding:15px;border-radius:16px;background:#f7f9fc;border:1px solid #e4eaf2}
+.planning-choice-title{margin:0 0 4px;font-weight:800;color:#182236}
+.planning-choice .helper{margin:0 0 12px}
+.planning-choice-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.planning-choice-actions button{min-height:48px}
+.assignment-field{padding-top:4px}
+.assignment-heading{align-items:center}
+.assignment-heading label{margin:0}
+.assignment-count{font-size:12px;font-weight:700;color:#1261c9;background:#eef5ff;padding:5px 9px;border-radius:999px}
+.assignment-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
+.assignment-option{position:relative;display:flex;align-items:center;gap:11px;min-height:62px;padding:12px 42px 12px 13px;border:1px solid #dfe6f1;border-radius:15px;background:#fff;cursor:pointer;transition:.15s ease}
+.assignment-option input{position:absolute;opacity:0;pointer-events:none}
+.assignment-person{display:flex;flex-direction:column;gap:2px;min-width:0}
+.assignment-person b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.assignment-person small{color:#7a8598;font-size:12px}
+.assignment-check{position:absolute;right:13px;top:50%;transform:translateY(-50%) scale(.85);display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#edf1f6;color:transparent;font-weight:900}
+.assignment-option:has(input:checked){border-color:#2a77d8;background:#eef6ff;box-shadow:0 0 0 2px rgba(18,97,201,.08)}
+.assignment-option:has(input:checked) .assignment-check{background:#1261c9;color:#fff;transform:translateY(-50%) scale(1)}
+.system-picker-wrap select{margin-bottom:2px}
+@media (max-width:520px){
+  .planning-choice-actions,.assignment-list{grid-template-columns:1fr}
+  .planning-date-time{grid-template-columns:1fr 1fr}
+  .planning-submit{bottom:76px}
+}

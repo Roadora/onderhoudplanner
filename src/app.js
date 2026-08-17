@@ -3,7 +3,7 @@ import { localRepository } from './data/local-repository.js';
 import { getAccountContext } from './account-context.js';
 import { listTeamMembers, listPendingInvitations, inviteTeamMember, getAppointmentAssignments, setAppointmentAssignments } from './team/team-service.js';
 import { flushCloudSync, verifyCloudAppointment, deleteCloudAppointments, deleteCloudInstallation, deleteCloudCustomer, clearCloudOperationalData } from './data/cloud-repository.js';
-import { getSurvey, saveSurvey, listSurveyPhotos, uploadSurveyPhotos, deleteSurveyPhoto } from './surveys/survey-service.js';
+import { listSurveys, getSurvey, saveSurvey, listSurveyPhotos, uploadSurveyPhotos, deleteSurveyPhoto } from './surveys/survey-service.js';
 
 const $ = (s) => document.querySelector(s);
 const field = (form, name) => form?.elements?.namedItem(name) || null;
@@ -106,6 +106,8 @@ let route = {name: currentRole === 'technician' ? 'myDay' : 'dashboard'};
 let calendarMonth = new Date();
 let selectedAgendaDate = todayKey();
 let deferredInstallPrompt = null;
+let surveyFollowUpCache = [];
+let surveyFollowUpPromise = null;
 
 function normalizeState(raw){
   const data = raw && typeof raw === 'object' ? raw : {};
@@ -332,7 +334,7 @@ function render(){
   if(route.name==='newAppointment') newAppointment();
   if(route.name==='dayPlan') dayPlan(route.date);
   if(route.name==='appointmentDetail') appointmentDetail(route.appointmentId);
-  if(route.name==='notifications') notificationsPage();
+  if(route.name==='notifications') void notificationsPage();
   if(route.name==='surveyDetail') void surveyDetailPage(route.appointmentId);
   if(route.name==='surveyEdit') void surveyEditPage(route.appointmentId);
 
@@ -380,6 +382,70 @@ function dashboardGreeting(){
 function actionSystems(){
   const leadDays=Number(state.settings.leadDays)||45;
   return sortedSystems().filter(s=>s.reminderCompany!==false && isSystemActiveForPlanning(s) && daysUntil(nextDate(s))<=leadDays);
+}
+function surveyRequiresFollowUp(survey={}){
+  if(survey.status!=='completed') return false;
+  if(survey.purpose==='onderhoud') return false;
+  if(survey.purpose==='storing_onderzoek' && survey.details?.followUp==='opgelost') return false;
+  return true;
+}
+function appointmentMomentKey(appointment={},fallbackTime='00:00'){
+  return `${appointment.date||''}T${appointment.time||fallbackTime}`;
+}
+function hasFollowUpAppointment(opname){
+  if(!opname?.customerId || !opname.date) return false;
+  const opnameMoment=appointmentMomentKey(opname);
+  return appointmentsForCustomer(opname.customerId).some(a=>
+    a.id!==opname.id &&
+    a.type!=='opname' &&
+    Boolean(a.date) &&
+    appointmentMomentKey(a)>=opnameMoment
+  );
+}
+function buildSurveyFollowUps(surveys=[]){
+  return surveys
+    .filter(surveyRequiresFollowUp)
+    .map(survey=>{
+      const appointment=appointments().find(a=>a.id===survey.appointment_id);
+      if(!appointment || appointment.type!=='opname' || hasFollowUpAppointment(appointment)) return null;
+      return {survey,appointment,customer:customer(appointment.customerId)||{}};
+    })
+    .filter(Boolean)
+    .sort((a,b)=>(a.appointment.date||'').localeCompare(b.appointment.date||''));
+}
+async function reloadSurveyFollowUps(){
+  if(surveyFollowUpPromise) return surveyFollowUpPromise;
+  surveyFollowUpPromise=(async()=>{
+    try{
+      surveyFollowUpCache=buildSurveyFollowUps(await listSurveys());
+    }catch(error){
+      console.warn('Opname-opvolging kon niet worden geladen',error);
+    }
+    return surveyFollowUpCache;
+  })();
+  try{return await surveyFollowUpPromise;}
+  finally{surveyFollowUpPromise=null;}
+}
+function followUpAppointmentType(survey={}){
+  if(['nieuwe_installatie','vervanging','uitbreiding'].includes(survey.purpose)) return 'plaatsing';
+  if(survey.purpose==='storing_onderzoek') return 'storing';
+  if(survey.purpose==='onderhoud') return 'onderhoud';
+  return 'controle';
+}
+function surveyFollowUpCard(item){
+  const {survey,appointment:a,customer:c}=item;
+  const customerName=c.name||'Onbekende klant';
+  return `<article class="card action-card survey-followup-card">
+    <div class="row between">
+      <div class="grow"><p class="title">${esc(customerName)}</p><p class="muted">📋 Opname afgerond · ${fmt(a.date)}</p></div>
+      <span class="status-badge paused">Vervolg nodig</span>
+    </div>
+    <p class="muted">Er staat na deze afgeronde opname nog geen vervolgafspraak bij de klant.</p>
+    <div class="actions">
+      <button class="secondary" onclick="nav('surveyDetail',{appointmentId:'${a.id}'})">📋 Bekijk opname</button>
+      <button class="primary" onclick="nav('newAppointment',{customerId:'${a.customerId}',type:'${followUpAppointmentType(survey)}',date:'${todayKey()}',back:'notifications'})">📅 Vervolg plannen</button>
+    </div>
+  </article>`;
 }
 function stats(){
   const dueNow = state.systems.filter(s=>isSystemActiveForPlanning(s) && daysUntil(nextDate(s))<=0).length;
@@ -452,11 +518,18 @@ function dashboardAttentionItems(){
   const items=[];
   const maintenance=actionSystems();
   if(maintenance.length) items.push({icon:'🟠',title:`${maintenance.length} onderhoudsmoment${maintenance.length===1?'':'en'} vragen actie`,sub:'Bekijk wie benaderd of ingepland moet worden',action:"nav('notifications')"});
+  const surveyFollowUps=surveyFollowUpCache;
+  if(surveyFollowUps.length){
+    const title=surveyFollowUps.length===1
+      ? `Opname van ${surveyFollowUps[0].customer.name||'een klant'} wacht op vervolg`
+      : `${surveyFollowUps.length} afgeronde opnames wachten op vervolg`;
+    items.push({icon:'📋',title,sub:'Er is nog geen vervolgafspraak ingepland',action:"nav('notifications')"});
+  }
   const unplanned=appointments().filter(a=>a.date>=todayKey() && !a.time);
   if(unplanned.length) items.push({icon:'🔵',title:`${unplanned.length} afspraak${unplanned.length===1?'':'en'} zonder starttijd`,sub:'Maak de planning compleet',action:"nav('agenda')"});
   return items;
 }
-function dashboard(){
+function dashboard({refreshSurveyFollowUps=true}={}){
   const today=todayDashboardAppointments();
   const attention=dashboardAttentionItems();
   const dateLabel=new Intl.DateTimeFormat('nl-NL',{weekday:'long',day:'numeric',month:'long'}).format(new Date(`${todayKey()}T12:00:00`));
@@ -475,6 +548,11 @@ function dashboard(){
     <div class="row between attention-heading"><div><p class="home-section-title">Aandacht nodig</p><span class="attention-count">${attention.length}</span></div>${attention.length?`<button class="link" onclick="nav('notifications')">Bekijk alles</button>`:''}</div>
     <article class="card attention-card">${attention.map(i=>`<button class="attention-row" onclick="${i.action}"><span class="attention-icon">${i.icon}</span><span class="grow"><b>${i.title}</b><small>${i.sub}</small></span><span class="right-chevron">›</span></button>`).join('') || '<div class="home-empty success-empty"><b>Alles bijgewerkt</b><span>Er zijn op dit moment geen acties die je aandacht nodig hebben.</span></div>'}</article>
   </section>`;
+  if(refreshSurveyFollowUps){
+    void reloadSurveyFollowUps().then(()=>{
+      if(route.name==='dashboard') dashboard({refreshSurveyFollowUps:false});
+    });
+  }
 }
 function morePage(){
   const owner=currentRole==='owner';
@@ -489,10 +567,15 @@ function morePage(){
     ${owner?`<div class="home-section-title">Beheer</div><article class="card more-list"><button onclick="nav('settings')"><span>⚙️</span><span class="grow"><b>Instellingen</b><small>Bedrijfsprofiel en onderhoud</small></span><span>›</span></button><button type="button" disabled><span>📊</span><span class="grow"><b>Overzicht & rapportages</b><small>Wordt in een volgende stap uitgebreid</small></span><span class="coming-soon">Binnenkort</span></button><button type="button" disabled><span>🔗</span><span class="grow"><b>Integraties</b><small>Bijv. e-Boekhouden</small></span><span class="coming-soon">Binnenkort</span></button></article>`:''}
   </section>`;
 }
-function notificationsPage(){
+async function notificationsPage(){
+  app.innerHTML=`<section class="screen"><article class="card"><p class="title">Actielijst laden…</p><p class="muted">Optero controleert onderhoud en afgeronde opnames.</p></article></section>`;
+  const surveyItems=await reloadSurveyFollowUps();
+  if(route.name!=='notifications') return;
   const items=actionSystems();
   app.innerHTML=`<section class="screen">
-    <article class="card"><p class="title">Onderhoudsactielijst</p><p class="muted">Gesorteerd op eerstvolgende onderhoudsdatum. Werk de contactstatus direct bij.</p></article>
+    <article class="card"><p class="title">Actielijst</p><p class="muted">Alles wat nog een concrete vervolgactie nodig heeft, op één plek.</p></article>
+    ${surveyItems.length?`<div class="home-section-title">Afgeronde opnames · vervolg nodig (${surveyItems.length})</div><div id="surveyFollowUpList">${surveyItems.map(surveyFollowUpCard).join('')}</div>`:''}
+    <div class="home-section-title">Onderhoud (${items.length})</div>
     <div class="filter-chips">
       <button class="chip active" data-filter="all">Alles (${items.length})</button>
       <button class="chip" data-filter="not_contacted">Nog benaderen</button>
@@ -503,7 +586,7 @@ function notificationsPage(){
   </section>`;
   const draw=(filter='all')=>{
     const filtered=filter==='all'?items:items.filter(s=>s.contactStatus===filter);
-    $('#actionList').innerHTML=filtered.map(quickActionCard).join('') || '<div class="card empty">Geen items in deze status.</div>';
+    $('#actionList').innerHTML=filtered.map(quickActionCard).join('') || '<div class="card empty">Geen onderhoudsitems in deze status.</div>';
   };
   document.querySelectorAll('.chip').forEach(btn=>btn.onclick=()=>{
     document.querySelectorAll('.chip').forEach(b=>b.classList.toggle('active',b===btn));

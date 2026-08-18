@@ -40,7 +40,7 @@ assert.match(css, /\.survey-photo-actions\{/);
 assert.match(css, /\.survey-photo-input\{position:absolute!important/);
 assert.match(css, /\.survey-photo-status\.show\{display:block\}/);
 
-assert.match(pkg.version, /^0\.12\.\d+$/);
+assert.match(pkg.version, /^0\.\d+\.\d+$/);
 assert.ok(config.includes(`APP_VERSION = '${pkg.version} `), 'Zichtbare appversie moet gelijk lopen met package.json');
 assert.ok(sw.includes(`CACHE_NAME = 'optero-v${pkg.version}'`), 'PWA-cacheversie moet gelijk lopen met package.json');
 

@@ -6,7 +6,7 @@ const config = fs.readFileSync(new URL('../src/config.js', import.meta.url), 'ut
 const sw = fs.readFileSync(new URL('../public/service-worker.js', import.meta.url), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
-assert.match(pkg.version, /^0\.12\.\d+$/);
+assert.match(pkg.version, /^0\.\d+\.\d+$/);
 assert.ok(config.includes(`APP_VERSION = '${pkg.version} `), 'Zichtbare appversie moet gelijk lopen met package.json');
 assert.ok(sw.includes(`CACHE_NAME = 'optero-v${pkg.version}'`), 'PWA-cacheversie moet gelijk lopen met package.json');
 

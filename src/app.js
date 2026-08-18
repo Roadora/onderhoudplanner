@@ -7,6 +7,7 @@ import { listSurveys, getSurvey, saveSurvey, listSurveyPhotos, uploadSurveyPhoto
 import { listQuotes, getQuoteBySurvey, getQuote, saveQuote } from './quotes/quote-service.js';
 import { listPriceBook, savePriceBookItem, deletePriceBookItem } from './quotes/price-book-service.js';
 import { listWorkOrders, getWorkOrder, getWorkOrderByAppointment, getWorkOrderByQuote, saveWorkOrder, linkWorkOrderAppointment, updateWorkOrderExecution } from './workorders/workorder-service.js';
+import { listLeads, getLead, updateLead, syncMailboxes, startMailboxOAuth, connectImapMailbox, listMailboxConnections, disconnectMailbox, listWebsiteSources, createWebsiteSource, deactivateWebsiteSource } from './leads/lead-service.js';
 
 const $ = (s) => document.querySelector(s);
 const field = (form, name) => form?.elements?.namedItem(name) || null;
@@ -114,6 +115,9 @@ let selectedAgendaDate = todayKey();
 let deferredInstallPrompt = null;
 let surveyFollowUpCache = [];
 let surveyFollowUpPromise = null;
+let leadInboxCache = [];
+let leadInboxPromise = null;
+let lastMailboxSyncAt = 0;
 
 function normalizeState(raw){
   const data = raw && typeof raw === 'object' ? raw : {};
@@ -193,6 +197,7 @@ function daysUntil(date){
 }
 function fmt(date){ return date ? parseDateKey(date).toLocaleDateString('nl-NL',{day:'numeric',month:'long',year:'numeric'}) : '-'; }
 function fmtShort(date){ return date ? parseDateKey(date).toLocaleDateString('nl-NL',{day:'2-digit',month:'2-digit',year:'numeric'}) : '-'; }
+function formatDateTime(value){ if(!value) return '-'; const d=new Date(value); return Number.isNaN(d.getTime())?'-':d.toLocaleString('nl-NL',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
 function monthLabel(date){ return date.toLocaleDateString('nl-NL',{month:'long',year:'numeric'}); }
 function esc(v=''){ return String(v).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll("'",'&#039;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
 function euro(value){ return new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(Number(value)||0); }
@@ -284,8 +289,8 @@ function contactStatusSelect(s){
 }
 
 const ROLE_ROUTE_ACCESS = Object.freeze({
-  owner: new Set(['dashboard','customers','agenda','more','quotes','settings','priceBook','account','team','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit','quote','workOrders','workOrderDetail','workOrderEdit','workOrderExecute']),
-  planner: new Set(['dashboard','customers','agenda','more','account','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit','workOrders','workOrderDetail','workOrderEdit','workOrderExecute']),
+  owner: new Set(['dashboard','customers','agenda','more','leads','leadDetail','integrations','quotes','settings','priceBook','account','team','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit','quote','workOrders','workOrderDetail','workOrderEdit','workOrderExecute']),
+  planner: new Set(['dashboard','customers','agenda','more','leads','leadDetail','account','myDay','new','detail','editCustomer','editSystem','planAppointment','newAppointment','dayPlan','appointmentDetail','notifications','surveyDetail','surveyEdit','workOrders','workOrderDetail','workOrderEdit','workOrderExecute']),
   technician: new Set(['myDay','account','appointmentDetail','surveyDetail','surveyEdit','workOrderDetail','workOrderExecute']),
   viewer: new Set(['account'])
 });
@@ -318,7 +323,7 @@ function render(){
   backBtn.onclick = () => navBack();
 
   const titles = {
-    dashboard:'Home', customers:'Klanten', agenda:'Planning', more:'Meer', quotes:'Offertes', settings:'Instellingen', priceBook:'Prijzenboek', account:currentRole === 'technician' ? 'Mijn account' : 'Bedrijfsaccount', team:'Medewerkers', myDay:'Mijn dag',
+    dashboard:'Home', customers:'Klanten', agenda:'Planning', more:'Meer', leads:'Aanvragen', leadDetail:'Aanvraag', integrations:'Integraties', quotes:'Offertes', settings:'Instellingen', priceBook:'Prijzenboek', account:currentRole === 'technician' ? 'Mijn account' : 'Bedrijfsaccount', team:'Medewerkers', myDay:'Mijn dag',
     new:'Nieuwe installatie', detail:'Klantdetail', editCustomer:'Klant bewerken',
     editSystem:'Systeem bewerken', planAppointment:'Afspraak plannen', newAppointment:'Afspraak inplannen', dayPlan:'Dagplanning', appointmentDetail:'Afspraakdetails', notifications:'Actielijst', surveyDetail:'Opnamedossier', surveyEdit:'Opname invullen', quote:'Offerte', workOrders:'Werkorders', workOrderDetail:'Werkorder', workOrderEdit:'Werkorder voorbereiden', workOrderExecute:'Werkorder uitvoeren'
   };
@@ -328,6 +333,9 @@ function render(){
   if(route.name==='customers') customers();
   if(route.name==='agenda') agenda();
   if(route.name==='more') morePage();
+  if(route.name==='leads') void leadsPage();
+  if(route.name==='leadDetail') void leadDetailPage(route.leadId);
+  if(route.name==='integrations') void integrationsPage();
   if(route.name==='quotes') void quotesPage();
   if(route.name==='settings') settings();
   if(route.name==='priceBook') void priceBookPage();
@@ -382,6 +390,8 @@ function navBack(){
   }
   if(route.name==='workOrders') return nav('more');
   if(route.name==='quotes') return nav('more');
+  if(route.name==='leadDetail') return nav(route.back || 'leads');
+  if(route.name==='leads' || route.name==='integrations') return nav('more');
   if(route.name==='appointmentDetail') return nav(currentRole==='technician' ? 'myDay' : 'dayPlan',{date:route.date || todayKey(),back:'agenda'});
   if(route.name==='priceBook'){
     if(route.back==='quote' && route.appointmentId) return nav('quote',{appointmentId:route.appointmentId,quoteId:route.quoteId||null,back:route.quoteBack||'appointmentDetail'});
@@ -469,6 +479,43 @@ async function reloadSurveyFollowUps(){
   })();
   try{return await surveyFollowUpPromise;}
   finally{surveyFollowUpPromise=null;}
+}
+
+function leadSourceIcon(lead={}){ return lead.source_type==='email'?'✉️':lead.source_type==='website'?'🌐':'👤'; }
+function leadSourceLabel(lead={}){
+  if(lead.source_type==='email') return `E-mail${lead.source_label?` · ${lead.source_label}`:''}`;
+  if(lead.source_type==='website') return lead.source_label || 'Website';
+  return 'Handmatig';
+}
+function leadStatusLabel(value){ return ({new:'Nieuw',reviewing:'In behandeling',converted:'Klant aangemaakt',linked:'Gekoppeld',dismissed:'Afgewezen'})[value] || 'Nieuw'; }
+function leadStatusClass(value){ return ({new:'info',reviewing:'paused',converted:'active',linked:'active',dismissed:'neutral'})[value] || 'info'; }
+async function reloadLeadInbox({syncEmail=false}={}){
+  if(currentRole==='technician' || currentRole==='viewer') return [];
+  if(leadInboxPromise) return leadInboxPromise;
+  leadInboxPromise=(async()=>{
+    try{
+      if(syncEmail && Date.now()-lastMailboxSyncAt>120000){
+        lastMailboxSyncAt=Date.now();
+        try{ await syncMailboxes(); }
+        catch(error){ console.warn('Mailbox synchroniseren overgeslagen',error); }
+      }
+      leadInboxCache=await listLeads('new');
+    }catch(error){
+      console.warn('Nieuwe aanvragen konden niet worden geladen',error);
+    }
+    return leadInboxCache;
+  })();
+  try{return await leadInboxPromise;}
+  finally{leadInboxPromise=null;}
+}
+function leadAttentionCard(lead={}){
+  const title=lead.name || lead.email || 'Nieuwe aanvraag';
+  const subtitle=lead.subject || lead.message || 'Nieuwe klantaanvraag';
+  return `<article class="card action-card lead-action-card">
+    <div class="row between"><div class="grow"><p class="title">${leadSourceIcon(lead)} ${esc(title)}</p><p class="muted">${esc(leadSourceLabel(lead))} · ${formatDateTime(lead.received_at)}</p></div><span class="status-badge info">Nieuw</span></div>
+    <p class="muted lead-snippet">${esc(subtitle).slice(0,180)}${String(subtitle).length>180?'…':''}</p>
+    <button class="primary" onclick="nav('leadDetail',{leadId:'${lead.id}',back:'notifications'})">Aanvraag beoordelen</button>
+  </article>`;
 }
 function followUpAppointmentType(survey={}){
   if(['nieuwe_installatie','vervanging','uitbreiding'].includes(survey.purpose)) return 'plaatsing';
@@ -560,6 +607,15 @@ function dashboardAppointmentRow(a){
 }
 function dashboardAttentionItems(){
   const items=[];
+  const leads=leadInboxCache;
+  if(leads.length){
+    const emailCount=leads.filter(item=>item.source_type==='email').length;
+    const websiteCount=leads.filter(item=>item.source_type==='website').length;
+    const sourceParts=[];
+    if(websiteCount) sourceParts.push(`${websiteCount} via website`);
+    if(emailCount) sourceParts.push(`${emailCount} via e-mail`);
+    items.push({icon:'🔔',title:`${leads.length} nieuwe aanvraag${leads.length===1?'':'en'}`,sub:sourceParts.join(' · ') || 'Klantgegevens staan klaar om te beoordelen',action:"nav('leads')"});
+  }
   const maintenance=actionSystems();
   if(maintenance.length) items.push({icon:'🟠',title:`${maintenance.length} onderhoudsmoment${maintenance.length===1?'':'en'} vragen actie`,sub:'Bekijk wie benaderd of ingepland moet worden',action:"nav('notifications')"});
   const surveyFollowUps=surveyFollowUpCache;
@@ -573,7 +629,7 @@ function dashboardAttentionItems(){
   if(unplanned.length) items.push({icon:'🔵',title:`${unplanned.length} afspraak${unplanned.length===1?'':'en'} zonder starttijd`,sub:'Maak de planning compleet',action:"nav('agenda')"});
   return items;
 }
-function dashboard({refreshSurveyFollowUps=true}={}){
+function dashboard({refreshSurveyFollowUps=true,refreshLeads=true}={}){
   const today=todayDashboardAppointments();
   const attention=dashboardAttentionItems();
   const dateLabel=new Intl.DateTimeFormat('nl-NL',{weekday:'long',day:'numeric',month:'long'}).format(new Date(`${todayKey()}T12:00:00`));
@@ -594,7 +650,12 @@ function dashboard({refreshSurveyFollowUps=true}={}){
   </section>`;
   if(refreshSurveyFollowUps){
     void reloadSurveyFollowUps().then(()=>{
-      if(route.name==='dashboard') dashboard({refreshSurveyFollowUps:false});
+      if(route.name==='dashboard') dashboard({refreshSurveyFollowUps:false,refreshLeads});
+    });
+  }
+  if(refreshLeads){
+    void reloadLeadInbox({syncEmail:true}).then(()=>{
+      if(route.name==='dashboard') dashboard({refreshSurveyFollowUps:false,refreshLeads:false});
     });
   }
 }
@@ -604,21 +665,23 @@ function morePage(){
     <article class="card more-intro"><p class="title">Meer</p><p class="muted">Overzicht, beheer en instellingen op één plek.</p></article>
     <div class="more-grid">
       <button onclick="nav('notifications')"><span>✓</span><b>Actielijst</b><small>Openstaande aandachtspunten</small></button>
+      <button onclick="nav('leads')"><span>🔔</span><b>Aanvragen</b><small>Website en nieuwe e-mails</small></button>
       <button onclick="nav('agenda')"><span>📅</span><b>Planning</b><small>Agenda en afspraken</small></button>
       <button onclick="nav('workOrders')"><span>🧾</span><b>Werkorders</b><small>Voorbereiden, plannen en uitvoeren</small></button>
       ${owner?`<button onclick="nav('quotes')"><span>💶</span><b>Offertes</b><small>Concept, verstuurd en akkoord</small></button><button onclick="nav('team')"><span>👥</span><b>Medewerkers</b><small>Team en rollen</small></button>`:''}
       <button onclick="nav('account')"><span>🏢</span><b>Bedrijfsaccount</b><small>Account en organisatie</small></button>
     </div>
-    ${owner?`<div class="home-section-title">Beheer</div><article class="card more-list"><button onclick="nav('settings')"><span>⚙️</span><span class="grow"><b>Instellingen</b><small>Bedrijfsprofiel en onderhoud</small></span><span>›</span></button><button onclick="nav('priceBook',{back:'more'})"><span>💶</span><span class="grow"><b>Prijzenboek</b><small>Standaardprijzen voor offertes</small></span><span>›</span></button><button type="button" disabled><span>📊</span><span class="grow"><b>Overzicht & rapportages</b><small>Wordt in een volgende stap uitgebreid</small></span><span class="coming-soon">Binnenkort</span></button><button type="button" disabled><span>🔗</span><span class="grow"><b>Integraties</b><small>Bijv. e-Boekhouden</small></span><span class="coming-soon">Binnenkort</span></button></article>`:''}
+    ${owner?`<div class="home-section-title">Beheer</div><article class="card more-list"><button onclick="nav('settings')"><span>⚙️</span><span class="grow"><b>Instellingen</b><small>Bedrijfsprofiel en onderhoud</small></span><span>›</span></button><button onclick="nav('priceBook',{back:'more'})"><span>💶</span><span class="grow"><b>Prijzenboek</b><small>Standaardprijzen voor offertes</small></span><span>›</span></button><button type="button" disabled><span>📊</span><span class="grow"><b>Overzicht & rapportages</b><small>Wordt in een volgende stap uitgebreid</small></span><span class="coming-soon">Binnenkort</span></button><button type="button" onclick="nav('integrations')"><span>🔗</span><span class="grow"><b>Integraties</b><small>Website en zakelijke mailbox</small></span><span>›</span></button></article>`:''}
   </section>`;
 }
 async function notificationsPage(){
-  app.innerHTML=`<section class="screen"><article class="card"><p class="title">Actielijst laden…</p><p class="muted">Optero controleert onderhoud en afgeronde opnames.</p></article></section>`;
-  const surveyItems=await reloadSurveyFollowUps();
+  app.innerHTML=`<section class="screen"><article class="card"><p class="title">Actielijst laden…</p><p class="muted">Optero controleert aanvragen, onderhoud en afgeronde opnames.</p></article></section>`;
+  const [surveyItems,leadItems]=await Promise.all([reloadSurveyFollowUps(),reloadLeadInbox({syncEmail:true})]);
   if(route.name!=='notifications') return;
   const items=actionSystems();
   app.innerHTML=`<section class="screen">
     <article class="card"><p class="title">Actielijst</p><p class="muted">Alles wat nog een concrete vervolgactie nodig heeft, op één plek.</p></article>
+    ${leadItems.length?`<div class="home-section-title">Nieuwe aanvragen (${leadItems.length})</div><div id="leadActionList">${leadItems.map(leadAttentionCard).join('')}</div>`:''}
     ${surveyItems.length?`<div class="home-section-title">Afgeronde opnames · vervolg nodig (${surveyItems.length})</div><div id="surveyFollowUpList">${surveyItems.map(surveyFollowUpCard).join('')}</div>`:''}
     <div class="home-section-title">Onderhoud (${items.length})</div>
     ${items.length?`<label class="action-filter-control" for="maintenanceFilter"><span>Toon onderhoudsacties</span><select id="maintenanceFilter" aria-label="Filter onderhoudsacties">
@@ -636,6 +699,187 @@ async function notificationsPage(){
   const maintenanceFilter=$('#maintenanceFilter');
   if(maintenanceFilter) maintenanceFilter.onchange=()=>draw(maintenanceFilter.value);
   draw();
+}
+
+
+function normalizedLeadPhone(value=''){ return String(value||'').replace(/\D/g,''); }
+function leadCustomerMatches(lead={}){
+  const email=String(lead.email||'').trim().toLowerCase();
+  const phone=normalizedLeadPhone(lead.phone);
+  return state.customers.filter(c=>
+    (email && String(c.email||'').trim().toLowerCase()===email) ||
+    (phone && normalizedLeadPhone(c.phone)===phone)
+  );
+}
+function leadContactAddress(lead={}){
+  return [lead.address,[lead.postal_code,lead.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+}
+function leadListCard(lead={}){
+  const title=lead.name || lead.email || 'Nieuwe aanvraag';
+  return `<button class="lead-list-card" onclick="nav('leadDetail',{leadId:'${lead.id}',back:'leads'})">
+    <span class="lead-list-icon">${leadSourceIcon(lead)}</span>
+    <span class="grow"><b>${esc(title)}</b><small>${esc(lead.subject||leadSourceLabel(lead))}</small><small>${esc(leadSourceLabel(lead))} · ${formatDateTime(lead.received_at)}</small></span>
+    <span class="status-badge ${leadStatusClass(lead.status)}">${leadStatusLabel(lead.status)}</span><span class="right-chevron">›</span>
+  </button>`;
+}
+async function leadsPage(){
+  app.innerHTML=`<section class="screen"><article class="card"><p class="title">Aanvragen laden…</p><p class="muted">Websiteaanvragen en nieuwe potentiële klanten uit e-mail worden opgehaald.</p></article></section>`;
+  try{
+    await reloadLeadInbox({syncEmail:true});
+    const all=await listLeads('');
+    if(route.name!=='leads') return;
+    app.innerHTML=`<section class="screen leads-screen">
+      <article class="card leads-intro"><div class="row between"><div><p class="eyebrow">INBOX</p><p class="title">Aanvragen</p><p class="muted">Beoordeel een aanvraag voordat er een klant in Optero wordt aangemaakt.</p></div><span class="attention-count">${all.filter(x=>x.status==='new').length}</span></div></article>
+      <label class="action-filter-control" for="leadFilter"><span>Toon aanvragen</span><select id="leadFilter"><option value="open">Nieuw / in behandeling</option><option value="all">Alles</option><option value="converted">Klant aangemaakt</option><option value="dismissed">Afgewezen</option></select></label>
+      <button class="secondary full-width" id="syncLeadMailBtn" type="button">↻ Nieuwe e-mail controleren</button>
+      <div id="leadList" class="lead-list"></div>
+    </section>`;
+    const draw=()=>{
+      const filter=$('#leadFilter')?.value||'open';
+      const filtered=filter==='all'?all:filter==='open'?all.filter(x=>['new','reviewing'].includes(x.status)):all.filter(x=>x.status===filter || (filter==='converted'&&x.status==='linked'));
+      $('#leadList').innerHTML=filtered.map(leadListCard).join('') || '<article class="card empty">Geen aanvragen in deze selectie.</article>';
+    };
+    $('#leadFilter').onchange=draw;
+    $('#syncLeadMailBtn').onclick=async()=>{
+      const btn=$('#syncLeadMailBtn'); btn.disabled=true; btn.textContent='E-mail controleren…';
+      try{
+        const result=await syncMailboxes();
+        leadInboxCache=[]; lastMailboxSyncAt=Date.now();
+        if(result.created) alert(`${result.created} nieuwe e-mailaanvraag${result.created===1?'':'en'} toegevoegd.`);
+        return leadsPage();
+      }catch(error){ alert(`E-mail controleren lukt nog niet.\n\n${error?.message||'Onbekende fout'}`); }
+      finally{ if(btn&&document.body.contains(btn)){btn.disabled=false;btn.textContent='↻ Nieuwe e-mail controleren';} }
+    };
+    draw();
+  }catch(error){
+    app.innerHTML=`<section class="screen"><article class="card"><p class="title">Aanvragen konden niet worden geladen</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p></article></section>`;
+  }
+}
+async function persistLeadCustomer(lead,{existingCustomerId='',schedule=false}={}){
+  let cid=existingCustomerId;
+  if(!cid){
+    const memoParts=[];
+    if(lead.subject) memoParts.push(`Aanvraag: ${lead.subject}`);
+    if(lead.message) memoParts.push(String(lead.message).slice(0,800));
+    const c={
+      id:uid(),
+      name:String(lead.name||'').trim() || String(lead.email||'').split('@')[0] || 'Nieuwe klant',
+      address:lead.address||'',postalCode:lead.postal_code||'',city:lead.city||'',phone:lead.phone||'',email:lead.email||'',
+      memo:memoParts.join('\n\n')
+    };
+    state.customers.push(c); cid=c.id; save();
+    try{ await flushCloudSync(); }
+    catch(error){ state.customers=state.customers.filter(x=>x.id!==cid); save(); throw new Error(`Klant kon niet veilig in de cloud worden opgeslagen. ${error?.message||''}`.trim()); }
+    await updateLead(lead.id,'converted',cid);
+  }else{
+    await updateLead(lead.id,'linked',cid);
+  }
+  leadInboxCache=leadInboxCache.filter(item=>item.id!==lead.id);
+  if(schedule){
+    return nav('newAppointment',{customerId:cid,type:'opname',date:todayKey(),note:lead.subject||lead.message||'',back:'leads'});
+  }
+  return nav('leadDetail',{leadId:lead.id,back:route.back||'leads'});
+}
+async function leadDetailPage(leadId){
+  app.innerHTML=`<section class="screen"><article class="card"><p class="title">Aanvraag laden…</p></article></section>`;
+  try{
+    const lead=await getLead(leadId);
+    if(route.name!=='leadDetail' || route.leadId!==leadId) return;
+    if(!lead) return nav('leads');
+    const matches=leadCustomerMatches(lead);
+    const linked=lead.customer_id?customer(lead.customer_id):null;
+    const handled=['converted','linked'].includes(lead.status) && linked;
+    app.innerHTML=`<section class="screen lead-detail-screen">
+      <article class="card lead-detail-hero"><div class="row between"><div><p class="eyebrow">${leadSourceIcon(lead)} ${esc(leadSourceLabel(lead))}</p><h2>${esc(lead.name||lead.email||'Nieuwe aanvraag')}</h2><p class="muted">Ontvangen ${formatDateTime(lead.received_at)}</p></div><span class="status-badge ${leadStatusClass(lead.status)}">${leadStatusLabel(lead.status)}</span></div></article>
+      ${handled?`<article class="card success-empty"><b>✓ Gekoppeld aan klant</b><span>${esc(linked.name)}</span><div class="actions"><button class="secondary" onclick="nav('detail',{customerId:'${linked.id}',back:'leads'})">Open klant</button><button class="primary" onclick="nav('newAppointment',{customerId:'${linked.id}',type:'opname',date:'${todayKey()}',back:'leads'})">Opname inplannen</button></div></article>`:''}
+      <article class="card"><p class="title">Contactgegevens</p><div class="survey-detail-list">
+        ${lead.name?`<div class="survey-detail-row"><span>Naam</span><b>${esc(lead.name)}</b></div>`:''}
+        ${lead.email?`<div class="survey-detail-row"><span>E-mail</span><b>${esc(lead.email)}</b></div>`:''}
+        ${lead.phone?`<div class="survey-detail-row"><span>Telefoon</span><b>${esc(lead.phone)}</b></div>`:''}
+        ${leadContactAddress(lead)?`<div class="survey-detail-row"><span>Adres</span><b>${esc(leadContactAddress(lead))}</b></div>`:''}
+      </div></article>
+      <article class="card"><p class="title">Aanvraag</p>${lead.subject?`<p class="lead-subject">${esc(lead.subject)}</p>`:''}<div class="notice lead-message">${esc(lead.message||'Geen berichttekst meegeleverd.')}</div></article>
+      ${!handled?`<article class="card lead-convert-card"><p class="title">Klant klaarzetten</p><p class="muted">Controleer de gegevens. Optero maakt pas een klant aan nadat je dat bevestigt.</p>
+        ${matches.length?`<div class="duplicate-notice"><b>Mogelijk bestaande klant gevonden</b><span>${esc(matches.map(c=>c.name).join(', '))}</span></div>`:''}
+        <div class="field"><label>Bestaande klant koppelen <span class="optional">optioneel</span></label><select id="leadExistingCustomer"><option value="">Geen — nieuwe klant aanmaken</option>${state.customers.map(c=>`<option value="${c.id}" ${matches[0]?.id===c.id?'selected':''}>${esc(c.name)}${c.email?` · ${esc(c.email)}`:''}</option>`).join('')}</select></div>
+        <div class="lead-convert-actions"><button class="primary" id="leadCreateBtn" type="button">${matches.length?'Koppelen / klant aanmaken':'Klant aanmaken'}</button><button class="secondary" id="leadCreateAndPlanBtn" type="button">Klant + opname inplannen</button><button class="danger" id="leadDismissBtn" type="button">Geen klant / afwijzen</button></div>
+      </article>`:''}
+    </section>`;
+    if(!handled){
+      const act=async(schedule)=>{
+        const existingCustomerId=$('#leadExistingCustomer')?.value||'';
+        const btn=schedule?$('#leadCreateAndPlanBtn'):$('#leadCreateBtn');
+        if(btn){btn.disabled=true;btn.textContent='Opslaan…';}
+        try{ await persistLeadCustomer(lead,{existingCustomerId,schedule}); }
+        catch(error){ alert(`Klant verwerken mislukt.\n\n${error?.message||'Onbekende fout'}`); if(btn&&document.body.contains(btn)){btn.disabled=false;btn.textContent=schedule?'Klant + opname inplannen':'Klant aanmaken';} }
+      };
+      $('#leadCreateBtn').onclick=()=>act(false);
+      $('#leadCreateAndPlanBtn').onclick=()=>act(true);
+      $('#leadDismissBtn').onclick=async()=>{
+        if(!confirm('Deze aanvraag afwijzen? Hij blijft in het aanvraagoverzicht terug te vinden.')) return;
+        try{ await updateLead(lead.id,'dismissed',''); leadInboxCache=leadInboxCache.filter(x=>x.id!==lead.id); nav(route.back||'leads'); }
+        catch(error){ alert(error?.message||'Afwijzen mislukt.'); }
+      };
+    }
+  }catch(error){
+    app.innerHTML=`<section class="screen"><article class="card"><p class="title">Aanvraag kon niet worden geopend</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p></article></section>`;
+  }
+}
+async function integrationsPage(){
+  if(currentRole!=='owner') return nav('more');
+  app.innerHTML=`<section class="screen"><article class="card"><p class="title">Integraties laden…</p></article></section>`;
+  try{
+    const [mailboxes,sources]=await Promise.all([listMailboxConnections(),listWebsiteSources()]);
+    if(route.name!=='integrations') return;
+    const mailboxParam=new URL(window.location.href).searchParams.get('mailbox');
+    const mailboxReason=new URL(window.location.href).searchParams.get('reason');
+    if(mailboxParam){ const cleanUrl=new URL(window.location.href); cleanUrl.searchParams.delete('mailbox'); cleanUrl.searchParams.delete('reason'); history.replaceState({},'',`${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`); }
+    app.innerHTML=`<section class="screen integrations-screen">
+      <article class="card"><p class="eyebrow">KOPPELINGEN</p><p class="title">Integraties</p><p class="muted">Laat aanvragen rechtstreeks in Optero binnenkomen zonder wachtwoorden in de app op te slaan.</p></article>
+      ${mailboxParam==='connected'?'<div class="auth-message success">Mailbox is gekoppeld. Klik op synchroniseren om de eerste nieuwe e-mails te controleren.</div>':''}
+      ${mailboxParam==='error'?`<div class="auth-message error">Mailbox koppelen mislukt: ${esc(mailboxReason||'onbekende fout')}</div>`:''}
+      <div class="home-section-title">Website</div>
+      <article class="card integration-card"><p class="title">Websiteaanvragen</p><p class="muted">Een websitekoppeling krijgt een eigen sleutel. De bedrijfswebsite stuurt het formulier server-side naar Optero.</p>
+        <div class="integration-list">${sources.map(source=>`<div class="integration-row"><span class="integration-provider">🌐</span><span class="grow"><b>${esc(source.name)}</b><small>Broncode: ${esc(source.public_key)}</small></span><span class="status-badge ${source.active?'active':'neutral'}">${source.active?'Actief':'Uit'}</span>${source.active?`<button class="smallbtn" data-disable-source="${source.id}">Uitzetten</button>`:''}</div>`).join('') || '<p class="muted">Nog geen website gekoppeld.</p>'}</div>
+        <button class="secondary full-width" id="createWebsiteSourceBtn" type="button">+ Websitekoppeling maken</button><div id="websiteSecretResult"></div>
+      </article>
+      <div class="home-section-title">Zakelijke mailbox</div>
+      <article class="card integration-card"><p class="title">E-mail naar nieuwe aanvragen</p><p class="muted">Koppel de zakelijke inbox. Optero zet alleen e-mails van nog onbekende afzenders klaar als potentiële klant; bestaande klanten worden overgeslagen.</p>
+        <div class="integration-list">${mailboxes.map(box=>{const isMs=box.provider==='microsoft',isGoogle=box.provider==='google',isImap=box.provider==='imap';const icon=isMs?'Ⓜ️':isGoogle?'🇬':'✉️';const label=isMs?'Microsoft 365 / Outlook':isGoogle?'Google Workspace / Gmail':'Andere provider (IMAP/SSL)';const extra=isImap&&box.imap_host?` · ${esc(box.imap_host)}:${Number(box.imap_port)||993}`:'';return `<div class="integration-row"><span class="integration-provider">${icon}</span><span class="grow"><b>${esc(box.mailbox_email)}</b><small>${label}${extra}${box.last_synced_at?` · laatst ${formatDateTime(box.last_synced_at)}`:''}</small>${box.last_sync_error?`<small class="redtext">${esc(box.last_sync_error)}</small>`:''}</span><span class="status-badge ${box.status==='connected'?'active':'neutral'}">${box.status==='connected'?'Gekoppeld':'Niet actief'}</span>${box.status==='connected'?`<button class="smallbtn" data-disconnect-mailbox="${box.id}">Ontkoppel</button>`:''}</div>`}).join('') || '<p class="muted">Nog geen mailbox gekoppeld.</p>'}</div>
+        <div class="integration-connect-grid"><button class="secondary" id="connectMicrosoftBtn" type="button">Microsoft 365 koppelen</button><button class="secondary" id="connectGoogleBtn" type="button">Gmail / Google koppelen</button></div>
+        <details class="imap-connect"><summary>Andere e-mailprovider (IMAP/SSL)</summary><form id="imapConnectForm" class="form imap-connect-form">
+          <p class="muted">Voor mailboxen die bijvoorbeeld via een hostingprovider in Outlook of Apple Mail staan. Gebruik de beveiligde IMAP/SSL-instellingen van de provider.</p>
+          <div class="field"><label>E-mailadres</label><input name="mailboxEmail" type="email" autocomplete="email" placeholder="info@bedrijf.nl" required></div>
+          <div class="form-grid-2"><div class="field"><label>IMAP-server</label><input name="host" autocomplete="off" placeholder="mail.bedrijf.nl" required></div><div class="field"><label>Poort</label><input name="port" inputmode="numeric" type="number" min="1" max="65535" value="993" required></div></div>
+          <div class="field"><label>Gebruikersnaam</label><input name="username" autocomplete="username" placeholder="info@bedrijf.nl" required></div>
+          <div class="field"><label>Wachtwoord</label><input name="password" type="password" autocomplete="current-password" required><small>Wordt versleuteld server-side opgeslagen; nooit zichtbaar voor medewerkers.</small></div>
+          <button class="secondary full-width" type="submit">IMAP-mailbox koppelen</button>
+        </form></details>
+        <button class="primary" id="syncMailboxesBtn" type="button">↻ Mailbox nu synchroniseren</button>
+      </article>
+    </section>`;
+    $('#createWebsiteSourceBtn').onclick=async()=>{
+      const name=prompt('Naam van deze websitekoppeling','Bedrijfswebsite'); if(name===null) return;
+      try{
+        const created=await createWebsiteSource(name||'Bedrijfswebsite');
+        $('#websiteSecretResult').innerHTML=`<div class="integration-secret"><b>Bewaar deze twee waarden nu</b><span>De geheime sleutel wordt na dit scherm niet opnieuw getoond.</span><label>Source key<code>${esc(created.sourceKey)}</code></label><label>Secret<code>${esc(created.sourceSecret)}</code></label><small>Gebruik deze uitsluitend server-side op de bedrijfswebsite; nooit in browser-JavaScript.</small></div>`;
+      }catch(error){ alert(error?.message||'Koppeling maken mislukt.'); }
+    };
+    document.querySelectorAll('[data-disable-source]').forEach(btn=>btn.onclick=async()=>{ if(confirm('Websitekoppeling uitzetten?')){await deactivateWebsiteSource(btn.dataset.disableSource); integrationsPage();} });
+    document.querySelectorAll('[data-disconnect-mailbox]').forEach(btn=>btn.onclick=async()=>{ if(confirm('Deze mailbox ontkoppelen?')){await disconnectMailbox(btn.dataset.disconnectMailbox); integrationsPage();} });
+    $('#connectMicrosoftBtn').onclick=()=>startMailboxOAuth('microsoft').catch(error=>alert(error?.message||'Koppelen mislukt.'));
+    $('#connectGoogleBtn').onclick=()=>startMailboxOAuth('google').catch(error=>alert(error?.message||'Koppelen mislukt.'));
+    $('#imapConnectForm').onsubmit=async(event)=>{
+      event.preventDefault();
+      const form=event.currentTarget; const submit=form.querySelector('button[type=submit]');
+      const payload={mailboxEmail:field(form,'mailboxEmail')?.value||'',host:field(form,'host')?.value||'',port:Number(field(form,'port')?.value)||993,username:field(form,'username')?.value||'',password:field(form,'password')?.value||''};
+      submit.disabled=true; submit.textContent='Verbinding controleren…';
+      try{ await connectImapMailbox(payload); alert('IMAP-mailbox is gekoppeld.'); integrationsPage(); }
+      catch(error){ alert(error?.message||'IMAP-mailbox koppelen mislukt.'); }
+      finally{if(submit&&document.body.contains(submit)){submit.disabled=false;submit.textContent='IMAP-mailbox koppelen';}}
+    };
+    $('#syncMailboxesBtn').onclick=async()=>{const btn=$('#syncMailboxesBtn');btn.disabled=true;btn.textContent='Synchroniseren…';try{const result=await syncMailboxes();leadInboxCache=[];lastMailboxSyncAt=Date.now();alert(result.created?`${result.created} nieuwe aanvraag${result.created===1?'':'en'} gevonden.`:'Mailbox is bijgewerkt; geen nieuwe potentiële klanten gevonden.');}catch(error){alert(error?.message||'Synchroniseren mislukt.');}finally{if(btn&&document.body.contains(btn)){btn.disabled=false;btn.textContent='↻ Mailbox nu synchroniseren';}}};
+  }catch(error){ app.innerHTML=`<section class="screen"><article class="card"><p class="title">Integraties konden niet worden geladen</p><p class="muted">${esc(error?.message||'Onbekende fout')}</p></article></section>`; }
 }
 
 function customers(){
@@ -1276,7 +1520,7 @@ async function newAppointment(){
       : route.scheduleSource==='maintenance' && routedSystem
         ? `Onderhoud ${routedSystem.brand||''} ${routedSystem.model||''}`.trim()
         : '';
-  const noteValue = existing?.note || defaultNote;
+  const noteValue = existing?.note || route.note || defaultNote;
   const assignmentData = await assignmentEditorData(existing?.id || '', {preselectSoleTechnician:!existing});
 
   const schedulingNotice = routedWorkOrder
@@ -2998,5 +3242,7 @@ window.addEventListener('appinstalled',()=>{deferredInstallPrompt=null;});
 window.addEventListener('optero-technician-data-updated',()=>{
   if(currentRole==='technician'){ state=load(); render(); }
 });
+const mailboxCallbackParam=new URL(window.location.href).searchParams.get('mailbox');
+if(mailboxCallbackParam && currentRole==='owner') route={name:'integrations'};
 render();
 if(currentRole !== 'technician') setTimeout(checkDueNotification,800);

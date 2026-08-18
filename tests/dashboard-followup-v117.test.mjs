@@ -12,8 +12,8 @@ assert.ok(sw.includes(`CACHE_NAME = 'optero-v${pkg.version}'`), 'PWA-cacheversie
 assert.match(app, /listSurveys/);
 assert.match(app, /surveyRequiresFollowUp/);
 assert.match(app, /buildSurveyFollowUps/);
-assert.match(app, /Er is nog geen vervolgafspraak ingepland/);
-assert.match(app, /Afgeronde opnames · vervolg nodig/);
-assert.match(app, /Vervolg plannen/);
-assert.match(app, /appointmentMomentKey\(a\)>=opnameMoment/);
+assert.match(app, /Er is nog geen offerte of werkorder gestart/);
+assert.match(app, /Afgeronde opnames · offerte nodig/);
+assert.match(app, /Offerte nodig/);
+assert.match(app, /startedSurveyIds\.has/);
 console.log('dashboard-followup-v117: OK');

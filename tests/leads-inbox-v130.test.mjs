@@ -15,10 +15,11 @@ const sw=fs.readFileSync(new URL('../public/service-worker.js',import.meta.url),
 const pkg=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8'));
 
 assert.match(app,/nav\('leads'\)/,'Aanvragenroute ontbreekt');
-assert.match(app,/Nieuwe aanvragen \(\$\{leadItems\.length\}\)/,'Actielijst toont nieuwe aanvragen');
+assert.match(app,/Openstaande aanvragen \(\$\{leadItems\.length\}\)/,'Actielijst toont openstaande aanvragen');
 assert.match(app,/leadInboxCache/,'Dashboardcache voor aanvragen ontbreekt');
 assert.match(app,/Klant \+ opname inplannen/,'Directe vervolgactie ontbreekt');
-assert.match(app,/await flushCloudSync\(\);[\s\S]*await updateLead\(lead\.id,'converted',cid\)/,'Klant moet eerst veilig in cloud staan voordat aanvraag wordt afgerond');
+assert.match(app,/await flushCloudSync\(\);[\s\S]*if\(schedule\)[\s\S]*await updateLead\(lead\.id,'reviewing',cid\)/,'Klant moet veilig in cloud staan en aanvraag moet open blijven totdat de opname echt is ingepland');
+assert.match(app,/persistAppointmentForm\(savedAppointmentId, f\)[\s\S]*route\.leadId[\s\S]*await updateLead\(route\.leadId,route\.leadFinalStatus/,'Aanvraag mag pas na succesvol opslaan van de opname worden afgerond');
 assert.match(app,/Microsoft 365 koppelen/);
 assert.match(app,/Gmail \/ Google koppelen/);
 assert.match(app,/Andere e-mailprovider \(IMAP\/SSL\)/,'Generieke IMAP-koppeling ontbreekt');

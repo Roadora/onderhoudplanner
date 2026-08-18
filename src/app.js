@@ -391,6 +391,7 @@ function navBack(){
   if(route.name==='workOrders') return nav('more');
   if(route.name==='quotes') return nav('more');
   if(route.name==='leadDetail') return nav(route.back || 'leads');
+  if(route.name==='newAppointment' && route.leadId) return nav('leadDetail',{leadId:route.leadId,back:route.leadBack||'leads'});
   if(route.name==='leads' || route.name==='integrations') return nav('more');
   if(route.name==='appointmentDetail') return nav(currentRole==='technician' ? 'myDay' : 'dayPlan',{date:route.date || todayKey(),back:'agenda'});
   if(route.name==='priceBook'){
@@ -443,25 +444,13 @@ function surveyRequiresFollowUp(survey={}){
   if(survey.purpose==='storing_onderzoek' && survey.details?.followUp==='opgelost') return false;
   return true;
 }
-function appointmentMomentKey(appointment={},fallbackTime='00:00'){
-  return `${appointment.date||''}T${appointment.time||fallbackTime}`;
-}
-function hasFollowUpAppointment(opname){
-  if(!opname?.customerId || !opname.date) return false;
-  const opnameMoment=appointmentMomentKey(opname);
-  return appointmentsForCustomer(opname.customerId).some(a=>
-    a.id!==opname.id &&
-    a.type!=='opname' &&
-    Boolean(a.date) &&
-    appointmentMomentKey(a)>=opnameMoment
-  );
-}
-function buildSurveyFollowUps(surveys=[]){
+function buildSurveyFollowUps(surveys=[],workOrders=[]){
+  const startedSurveyIds=new Set((workOrders||[]).map(w=>String(w.survey_appointment_id||'')).filter(Boolean));
   return surveys
     .filter(surveyRequiresFollowUp)
     .map(survey=>{
       const appointment=appointments().find(a=>a.id===survey.appointment_id);
-      if(!appointment || appointment.type!=='opname' || hasFollowUpAppointment(appointment)) return null;
+      if(!appointment || appointment.type!=='opname' || startedSurveyIds.has(String(survey.appointment_id||''))) return null;
       return {survey,appointment,customer:customer(appointment.customerId)||{}};
     })
     .filter(Boolean)
@@ -471,7 +460,8 @@ async function reloadSurveyFollowUps(){
   if(surveyFollowUpPromise) return surveyFollowUpPromise;
   surveyFollowUpPromise=(async()=>{
     try{
-      surveyFollowUpCache=buildSurveyFollowUps(await listSurveys());
+      const [surveys,workOrders]=await Promise.all([listSurveys(),listWorkOrders()]);
+      surveyFollowUpCache=buildSurveyFollowUps(surveys,workOrders);
     }catch(error){
       console.warn('Opname-opvolging kon niet worden geladen',error);
     }
@@ -499,7 +489,8 @@ async function reloadLeadInbox({syncEmail=false}={}){
         try{ await syncMailboxes(); }
         catch(error){ console.warn('Mailbox synchroniseren overgeslagen',error); }
       }
-      leadInboxCache=await listLeads('new');
+      const openLeads=await listLeads('');
+      leadInboxCache=openLeads.filter(item=>['new','reviewing'].includes(item.status));
     }catch(error){
       console.warn('Nieuwe aanvragen konden niet worden geladen',error);
     }
@@ -512,30 +503,21 @@ function leadAttentionCard(lead={}){
   const title=lead.name || lead.email || 'Nieuwe aanvraag';
   const subtitle=lead.subject || lead.message || 'Nieuwe klantaanvraag';
   return `<article class="card action-card lead-action-card">
-    <div class="row between"><div class="grow"><p class="title">${leadSourceIcon(lead)} ${esc(title)}</p><p class="muted">${esc(leadSourceLabel(lead))} · ${formatDateTime(lead.received_at)}</p></div><span class="status-badge info">Nieuw</span></div>
+    <div class="row between"><div class="grow"><p class="title">${leadSourceIcon(lead)} ${esc(title)}</p><p class="muted">${esc(leadSourceLabel(lead))} · ${formatDateTime(lead.received_at)}</p></div><span class="status-badge ${leadStatusClass(lead.status)}">${leadStatusLabel(lead.status)}</span></div>
     <p class="muted lead-snippet">${esc(subtitle).slice(0,180)}${String(subtitle).length>180?'…':''}</p>
     <button class="primary" onclick="nav('leadDetail',{leadId:'${lead.id}',back:'notifications'})">Aanvraag beoordelen</button>
   </article>`;
 }
-function followUpAppointmentType(survey={}){
-  if(['nieuwe_installatie','vervanging','uitbreiding'].includes(survey.purpose)) return 'plaatsing';
-  if(survey.purpose==='storing_onderzoek') return 'storing';
-  if(survey.purpose==='onderhoud') return 'onderhoud';
-  return 'controle';
-}
 function surveyFollowUpCard(item){
-  const {survey,appointment:a,customer:c}=item;
+  const {appointment:a,customer:c}=item;
   const customerName=c.name||'Onbekende klant';
   return `<article class="card action-card survey-followup-card">
     <div class="row between">
       <div class="grow"><p class="title">${esc(customerName)}</p><p class="muted">📋 Opname afgerond · ${fmt(a.date)}</p></div>
-      <span class="status-badge paused">Vervolg nodig</span>
+      <span class="status-badge paused">Offerte nodig</span>
     </div>
-    <p class="muted">Er staat na deze afgeronde opname nog geen vervolgafspraak bij de klant.</p>
-    <div class="actions">
-      <button class="secondary" onclick="nav('surveyDetail',{appointmentId:'${a.id}',back:'notifications'})">📋 Bekijk opname</button>
-      <button class="primary" onclick="nav('newAppointment',{customerId:'${a.customerId}',type:'${followUpAppointmentType(survey)}',date:'${todayKey()}',back:'notifications'})">📅 Vervolg plannen</button>
-    </div>
+    <p class="muted">De opname is afgerond, maar er is nog geen offerte of werkorder gestart.</p>
+    <button class="primary full-width" onclick="nav('surveyDetail',{appointmentId:'${a.id}',back:'notifications'})">📋 Bekijk opname${currentRole==='owner'?' & maak offerte':''}</button>
   </article>`;
 }
 function stats(){
@@ -614,16 +596,16 @@ function dashboardAttentionItems(){
     const sourceParts=[];
     if(websiteCount) sourceParts.push(`${websiteCount} via website`);
     if(emailCount) sourceParts.push(`${emailCount} via e-mail`);
-    items.push({icon:'🔔',title:`${leads.length} nieuwe aanvraag${leads.length===1?'':'en'}`,sub:sourceParts.join(' · ') || 'Klantgegevens staan klaar om te beoordelen',action:"nav('leads')"});
+    items.push({icon:'🔔',title:`${leads.length} openstaande aanvraag${leads.length===1?'':'en'}`,sub:sourceParts.join(' · ') || 'Klantgegevens staan klaar om te beoordelen',action:"nav('leads')"});
   }
   const maintenance=actionSystems();
   if(maintenance.length) items.push({icon:'🟠',title:`${maintenance.length} onderhoudsmoment${maintenance.length===1?'':'en'} vragen actie`,sub:'Bekijk wie benaderd of ingepland moet worden',action:"nav('notifications')"});
   const surveyFollowUps=surveyFollowUpCache;
   if(surveyFollowUps.length){
     const title=surveyFollowUps.length===1
-      ? `Opname van ${surveyFollowUps[0].customer.name||'een klant'} wacht op vervolg`
-      : `${surveyFollowUps.length} afgeronde opnames wachten op vervolg`;
-    items.push({icon:'📋',title,sub:'Er is nog geen vervolgafspraak ingepland',action:"nav('notifications')"});
+      ? `Opname van ${surveyFollowUps[0].customer.name||'een klant'} wacht op offerte`
+      : `${surveyFollowUps.length} afgeronde opnames wachten op offerte`;
+    items.push({icon:'📋',title,sub:'Er is nog geen offerte of werkorder gestart',action:"nav('notifications')"});
   }
   const unplanned=appointments().filter(a=>a.date>=todayKey() && !a.time);
   if(unplanned.length) items.push({icon:'🔵',title:`${unplanned.length} afspraak${unplanned.length===1?'':'en'} zonder starttijd`,sub:'Maak de planning compleet',action:"nav('agenda')"});
@@ -681,8 +663,8 @@ async function notificationsPage(){
   const items=actionSystems();
   app.innerHTML=`<section class="screen">
     <article class="card"><p class="title">Actielijst</p><p class="muted">Alles wat nog een concrete vervolgactie nodig heeft, op één plek.</p></article>
-    ${leadItems.length?`<div class="home-section-title">Nieuwe aanvragen (${leadItems.length})</div><div id="leadActionList">${leadItems.map(leadAttentionCard).join('')}</div>`:''}
-    ${surveyItems.length?`<div class="home-section-title">Afgeronde opnames · vervolg nodig (${surveyItems.length})</div><div id="surveyFollowUpList">${surveyItems.map(surveyFollowUpCard).join('')}</div>`:''}
+    ${leadItems.length?`<div class="home-section-title">Openstaande aanvragen (${leadItems.length})</div><div id="leadActionList">${leadItems.map(leadAttentionCard).join('')}</div>`:''}
+    ${surveyItems.length?`<div class="home-section-title">Afgeronde opnames · offerte nodig (${surveyItems.length})</div><div id="surveyFollowUpList">${surveyItems.map(surveyFollowUpCard).join('')}</div>`:''}
     <div class="home-section-title">Onderhoud (${items.length})</div>
     ${items.length?`<label class="action-filter-control" for="maintenanceFilter"><span>Toon onderhoudsacties</span><select id="maintenanceFilter" aria-label="Filter onderhoudsacties">
       <option value="all">Alles (${items.length})</option>
@@ -757,6 +739,7 @@ async function leadsPage(){
 }
 async function persistLeadCustomer(lead,{existingCustomerId='',schedule=false}={}){
   let cid=existingCustomerId;
+  const finalStatus=existingCustomerId?'linked':'converted';
   if(!cid){
     const memoParts=[];
     if(lead.subject) memoParts.push(`Aanvraag: ${lead.subject}`);
@@ -770,14 +753,15 @@ async function persistLeadCustomer(lead,{existingCustomerId='',schedule=false}={
     state.customers.push(c); cid=c.id; save();
     try{ await flushCloudSync(); }
     catch(error){ state.customers=state.customers.filter(x=>x.id!==cid); save(); throw new Error(`Klant kon niet veilig in de cloud worden opgeslagen. ${error?.message||''}`.trim()); }
-    await updateLead(lead.id,'converted',cid);
-  }else{
-    await updateLead(lead.id,'linked',cid);
   }
-  leadInboxCache=leadInboxCache.filter(item=>item.id!==lead.id);
   if(schedule){
-    return nav('newAppointment',{customerId:cid,type:'opname',date:todayKey(),note:lead.subject||lead.message||'',back:'leads'});
+    await updateLead(lead.id,'reviewing',cid);
+    const cached=leadInboxCache.find(item=>item.id===lead.id);
+    if(cached){ cached.status='reviewing'; cached.customer_id=cid; }
+    return nav('newAppointment',{customerId:cid,type:'opname',date:todayKey(),note:lead.subject||lead.message||'',leadId:lead.id,leadFinalStatus:finalStatus,back:'leadDetail',leadBack:route.back||'leads'});
   }
+  await updateLead(lead.id,finalStatus,cid);
+  leadInboxCache=leadInboxCache.filter(item=>item.id!==lead.id);
   return nav('leadDetail',{leadId:lead.id,back:route.back||'leads'});
 }
 async function leadDetailPage(leadId){
@@ -1660,6 +1644,14 @@ async function newAppointment(){
       if(selectedSystem && appointmentType==='onderhoud') selectedSystem.contactStatus='scheduled';
       save();
       if(!(await persistAppointmentForm(savedAppointmentId, f))) return;
+      if(route.leadId && appointmentType==='opname'){
+        try{
+          await updateLead(route.leadId,route.leadFinalStatus||'converted',appointmentCustomerId);
+          leadInboxCache=leadInboxCache.filter(item=>item.id!==route.leadId);
+        }catch(error){
+          alert(`De opname is ingepland, maar de aanvraag kon nog niet als verwerkt worden gemarkeerd. Hij blijft daarom bij Aandacht nodig staan.\n\n${error?.message||'Onbekende fout'}`);
+        }
+      }
       if(routedWorkOrder){
         try{ await linkWorkOrderAppointment(routedWorkOrder.id,savedAppointmentId); }
         catch(error){
@@ -2480,19 +2472,78 @@ async function quotePage(appointmentId,quoteId=null){
 function workOrderSeedFromSurvey(workOrder,survey){
   const d=workOrder?.details||{};
   const sd=survey?.details||{};
-  const first=Array.isArray(sd.systems)&&sd.systems.length?sd.systems[0]:{};
   const purpose=survey?.purpose||'nieuwe_installatie';
+  const surveySystems=Array.isArray(sd.systems)&&sd.systems.length?sd.systems:[];
+  const savedSystems=Array.isArray(d.systems)&&d.systems.length?d.systems:[];
+  const fallbackSystem={
+    systemType:sd.desiredSystemType||(purpose==='uitbreiding'?'multi_split':'single_split'),
+    unitCount:Number(sd.desiredUnits||sd.additionalUnits||1)||1,
+    brandPreference:sd.brandPreference||'',
+    modelPreference:'',
+    units:[]
+  };
+  const count=Math.max(savedSystems.length,surveySystems.length,(d.brand||d.model||d.systemDescription)?1:0,1);
+  const systems=Array.from({length:count},(_,index)=>{
+    const saved=savedSystems[index]||{};
+    const source=surveySystems[index]||(index===0?fallbackSystem:{});
+    const systemType=saved.systemType||source.systemType||(index===0?d.systemType:'')||'single_split';
+    const surveyUnits=Array.isArray(source.units)?source.units:[];
+    const savedUnits=Array.isArray(saved.units)?saved.units:[];
+    const units=(savedUnits.length?savedUnits:surveyUnits).map(unit=>({room:unit?.room||'',capacityKw:unit?.capacityKw||''}));
+    return {
+      systemType,
+      unitCount:Number(saved.unitCount||source.unitCount||units.length||surveyInstallUnitCount(systemType,1))||1,
+      brand:saved.brand||source.brandPreference||(index===0?d.brand:'')||'',
+      model:saved.model||source.modelPreference||(index===0?d.model:'')||'',
+      expectedLineLengthM:saved.expectedLineLengthM||source.lineLengthM||(index===0?d.expectedLineLengthM:'')||'',
+      refrigerantType:saved.refrigerantType||(source.refrigerantType&&source.refrigerantType!=='unknown'?source.refrigerantType:'')||(index===0?d.refrigerantType:'')||'',
+      factoryChargeKg:saved.factoryChargeKg||source.refrigerantAmountKg||(index===0?d.factoryChargeKg:'')||'',
+      includedLineM:saved.includedLineM||(index===0?d.includedLineM:'')||'',
+      extraRefrigerantPerM:saved.extraRefrigerantPerM||(index===0?d.extraRefrigerantPerM:'')||'',
+      units
+    };
+  });
   const defaultJobType=purpose==='onderhoud'?'onderhoud':purpose==='storing_onderzoek'?'storing':purpose==='anders'?'controle':'plaatsing';
   return {
     jobType:d.jobType||defaultJobType,
     workType:d.workType||surveyPurposeLabel(purpose),
-    systemDescription:d.systemDescription||[first.systemType?detailValueLabel('systemType',first.systemType):'',first.brandPreference||'',first.modelPreference||''].filter(Boolean).join(' · '),
-    brand:d.brand||first.brandPreference||'', model:d.model||first.modelPreference||'',
-    expectedLineLengthM:d.expectedLineLengthM||sd.estimatedLineLengthM||first.lineLengthM||'',
-    refrigerantType:d.refrigerantType||(first.refrigerantType&&first.refrigerantType!=='unknown'?first.refrigerantType:''),
-    factoryChargeKg:d.factoryChargeKg||first.refrigerantAmountKg||'', includedLineM:d.includedLineM||'',
-    extraRefrigerantPerM:d.extraRefrigerantPerM||'', instructions:d.instructions||'', materials:d.materials||sd.installationMaterials||'', notes:d.notes||''
+    systems,
+    materials:d.materials||sd.installationMaterials||'',
+    instructions:d.instructions||'',
+    notes:d.notes||''
   };
+}
+function workOrderSystemUnitsText(system={}){
+  const units=Array.isArray(system.units)?system.units:[];
+  return units.map((unit,index)=>{
+    const bits=[unit.room||`Binnenunit ${index+1}`,unit.capacityKw?`${unit.capacityKw} kW`:''].filter(Boolean);
+    return bits.join(' · ');
+  }).join('\n');
+}
+function workOrderSystemDetailCard(system={},index=0){
+  const type=detailValueLabel('systemType',system.systemType||'');
+  return `<div class="workorder-system-card"><div class="survey-system-title"><div><span>SYSTEEM ${index+1}</span><b>${esc(type||`Systeem ${index+1}`)}</b></div><span>${Number(system.unitCount)||1} binnenunit${Number(system.unitCount)===1?'':'s'}</span></div><div class="survey-detail-list">${workOrderSafeRow('Merk',system.brand)}${workOrderSafeRow('Model',system.model)}${workOrderSafeRow('Binnenunits',workOrderSystemUnitsText(system))}${workOrderSafeRow('Verwachte leidinglengte',system.expectedLineLengthM?`${system.expectedLineLengthM} m`:'')}${workOrderSafeRow('Koudemiddel',system.refrigerantType&&system.refrigerantType!=='unknown'?system.refrigerantType:'')}${workOrderSafeRow('Fabrieksvulling',system.factoryChargeKg?`${system.factoryChargeKg} kg`:'')}${workOrderSafeRow('Inbegrepen leidinglengte',system.includedLineM?`${system.includedLineM} m`:'')}${workOrderSafeRow('Bijvulling per extra meter',system.extraRefrigerantPerM?`${system.extraRefrigerantPerM} g/m`:'')}</div></div>`;
+}
+function workOrderSystemEditCard(system={},index=0){
+  const n=index+1,prefix=`woSystem${n}`;
+  return `<div class="workorder-system-card" data-workorder-system="${index}"><div class="survey-system-title"><div><span>SYSTEEM ${n}</span><b>${esc(detailValueLabel('systemType',system.systemType||'single_split'))}</b></div><span>${Number(system.unitCount)||1} binnenunit${Number(system.unitCount)===1?'':'s'}</span></div>${surveySelect(`${prefix}Type`,'Type systeem',system.systemType||'single_split',[['single_split','Single split'],['multi_split','Multi split'],['triple_split','Triple split'],['warmtepomp','Warmtepomp'],['anders','Anders']])}<div class="form-grid-2">${surveyField(`${prefix}Brand`,'Merk',system.brand||'','Daikin')}${surveyField(`${prefix}Model`,'Model / serie',system.model||'','Stylish')}</div>${workOrderSystemUnitsText(system)?`<div class="notice workorder-unit-note"><b>Binnenunits uit opname</b><br>${esc(workOrderSystemUnitsText(system))}</div>`:''}<div class="form-grid-2">${surveyField(`${prefix}LineLength`,'Verwachte leidinglengte (m)',system.expectedLineLengthM||'','Bijv. 8','number')}${surveySelect(`${prefix}Refrigerant`,'Koudemiddel',system.refrigerantType||'unknown',SURVEY_REFRIGERANT_OPTIONS)}</div><div class="form-grid-2">${surveyField(`${prefix}FactoryCharge`,'Fabrieksvulling (kg)',system.factoryChargeKg||'','Bijv. 0.85','number')}${surveyField(`${prefix}IncludedLine`,'Leiding inbegrepen tot (m)',system.includedLineM||'','Bijv. 10','number')}</div>${surveyField(`${prefix}ExtraPerM`,'Extra koudemiddel per meter (g/m)',system.extraRefrigerantPerM||'','Bijv. 20','number')}</div>`;
+}
+function collectWorkOrderSystems(form,systems=[]){
+  return systems.map((system,index)=>{
+    const n=index+1,prefix=`woSystem${n}`;
+    return {
+      systemType:field(form,`${prefix}Type`)?.value||system.systemType||'single_split',
+      unitCount:Number(system.unitCount)||1,
+      brand:field(form,`${prefix}Brand`)?.value.trim()||'',
+      model:field(form,`${prefix}Model`)?.value.trim()||'',
+      expectedLineLengthM:field(form,`${prefix}LineLength`)?.value||'',
+      refrigerantType:field(form,`${prefix}Refrigerant`)?.value||'unknown',
+      factoryChargeKg:field(form,`${prefix}FactoryCharge`)?.value||'',
+      includedLineM:field(form,`${prefix}IncludedLine`)?.value||'',
+      extraRefrigerantPerM:field(form,`${prefix}ExtraPerM`)?.value||'',
+      units:Array.isArray(system.units)?system.units.map(unit=>({room:unit?.room||'',capacityKw:unit?.capacityKw||''})):[]
+    };
+  });
 }
 function workOrderSafeRow(label,value){ return String(value??'').trim()?`<div class="survey-detail-row"><span>${esc(label)}</span><b>${esc(String(value))}</b></div>`:''; }
 function workOrderExecutionRows(execution={}){
@@ -2527,14 +2578,18 @@ async function workOrderDetailPage(workOrderId){
     if(!workOrder) throw new Error('Werkorder niet gevonden of geen toegang.');
     const c=customer(workOrder.customer_id)||{};
     const a=workOrder.appointment_id?appointments().find(x=>x.id===workOrder.appointment_id):null;
-    let survey=null;
-    if(workOrder.survey_appointment_id){ try{ survey=await getSurvey(workOrder.survey_appointment_id); }catch{} }
+    let survey=null,surveyPhotos=[];
+    if(workOrder.survey_appointment_id){
+      try{ survey=await getSurvey(workOrder.survey_appointment_id); }catch{}
+      try{ surveyPhotos=await listSurveyPhotos(workOrder.survey_appointment_id); }catch{}
+    }
     const d=workOrderSeedFromSurvey(workOrder,survey);
-    const hasPrep=Object.values(d).some(v=>String(v??'').trim());
+    const hasPrep=Boolean(d.systems?.length || d.workType || d.materials || d.instructions || d.notes);
     app.innerHTML=`<section class="screen workorder-detail-screen">
       <article class="card"><div class="row between"><div><p class="eyebrow">WERKORDER</p><h2>${esc(workOrder.title||'Werkorder')}</h2><p class="muted">${esc(c.name||'Klant')} · ${esc(fullAddress(c)||'Geen adres')}</p></div><span class="status-badge ${workOrderStatusClass(workOrder.status)}">${workOrderStatusLabel(workOrder.status)}</span></div></article>
-      ${survey?`<article class="card"><p class="eyebrow">UIT OPNAME</p><p class="title">Belangrijk voor uitvoering</p><div class="survey-detail-list">${workOrderSafeRow('Gewenste plek binnenunit(s)',survey.details?.indoorLocation)}${workOrderSafeRow('Gewenste plek buitenunit(s)',survey.details?.outdoorLocation)}${workOrderSafeRow('Geschatte leidinglengte',survey.details?.estimatedLineLengthM?`${survey.details.estimatedLineLengthM} m`:'')}${workOrderSafeRow('Hoogte / bereikbaarheid',survey.details?.heightAccess)}${workOrderSafeRow('Elektra',detailValueLabel('electricalPresent',survey.details?.electricalPresent||''))}${workOrderSafeRow('Condensafvoer',detailValueLabel('condensatePossible',survey.details?.condensatePossible||''))}</div>${survey.findings?`<div class="notice survey-note"><b>Constateringen</b><br>${esc(survey.findings)}</div>`:''}</article>`:''}
-      <article class="card"><div class="row between"><div><p class="eyebrow">WERKVOORBEREIDING</p><p class="title">Technische opdracht</p></div>${currentRole!=='technician'?`<button class="smallbtn" id="editWorkOrder">Bewerken</button>`:''}</div>${hasPrep?`<div class="survey-detail-list">${workOrderSafeRow('Soort werk',appointmentTitle(d.jobType||'plaatsing'))}${workOrderSafeRow('Werkzaamheden',d.workType)}${workOrderSafeRow('Installatie',d.systemDescription)}${workOrderSafeRow('Merk',d.brand)}${workOrderSafeRow('Model',d.model)}${workOrderSafeRow('Verwachte leidinglengte',d.expectedLineLengthM?`${d.expectedLineLengthM} m`:'')}${workOrderSafeRow('Koudemiddel',d.refrigerantType)}${workOrderSafeRow('Fabrieksvulling',d.factoryChargeKg?`${d.factoryChargeKg} kg`:'')}${workOrderSafeRow('Inbegrepen leidinglengte',d.includedLineM?`${d.includedLineM} m`:'')}${workOrderSafeRow('Bijvulling per extra meter',d.extraRefrigerantPerM?`${d.extraRefrigerantPerM} g/m`:'')}${workOrderSafeRow('Materialen / voorbereiding',d.materials)}${workOrderSafeRow('Werkinstructie',d.instructions)}${workOrderSafeRow('Notitie',d.notes)}</div>`:'<p class="muted">Werkvoorbereiding is nog niet ingevuld.</p>'}</article>
+      ${survey?`<article class="card"><p class="eyebrow">UIT OPNAME</p><p class="title">Belangrijk voor uitvoering</p><div class="survey-detail-list">${workOrderSafeRow('Wensen / bijzonderheden',survey.details?.installationNotes)}${workOrderSafeRow('Gewenste plek binnenunit(s)',survey.details?.indoorLocation)}${workOrderSafeRow('Gewenste plek buitenunit(s)',survey.details?.outdoorLocation)}${workOrderSafeRow('Geschatte totale leidinglengte',survey.details?.estimatedLineLengthM?`${survey.details.estimatedLineLengthM} m`:'')}${workOrderSafeRow('Hoogte / bereikbaarheid',survey.details?.heightAccess)}${workOrderSafeRow('Elektra',detailValueLabel('electricalPresent',survey.details?.electricalPresent||''))}${workOrderSafeRow('Condensafvoer',detailValueLabel('condensatePossible',survey.details?.condensatePossible||''))}</div>${survey.findings?`<div class="notice survey-note"><b>Constateringen</b><br>${esc(survey.findings)}</div>`:''}</article>`:''}
+      ${surveyPhotos.length?`<article class="card"><div class="row between"><div><p class="eyebrow">OPNAMEFOTO'S</p><p class="title">Situatie op locatie</p></div><span class="survey-photo-count">${surveyPhotos.length}</span></div><div class="survey-photo-grid workorder-photo-grid">${surveyPhotos.map(photo=>`<a href="${photo.url}" target="_blank" rel="noopener"><img src="${photo.url}" alt="Opnamefoto voor werkorder"></a>`).join('')}</div></article>`:''}
+      <article class="card"><div class="row between"><div><p class="eyebrow">WERKVOORBEREIDING</p><p class="title">Technische opdracht</p></div>${currentRole!=='technician'?`<button class="smallbtn" id="editWorkOrder">Bewerken</button>`:''}</div>${hasPrep?`<div class="survey-detail-list">${workOrderSafeRow('Soort werk',appointmentTitle(d.jobType||'plaatsing'))}${workOrderSafeRow('Werkzaamheden',d.workType)}</div>${d.systems?.length?`<div class="workorder-systems-list">${d.systems.map(workOrderSystemDetailCard).join('')}</div>`:''}<div class="survey-detail-list">${workOrderSafeRow('Materialen / voorbereiding',d.materials)}${workOrderSafeRow('Werkinstructie',d.instructions)}${workOrderSafeRow('Notitie',d.notes)}</div>`:'<p class="muted">Werkvoorbereiding is nog niet ingevuld.</p>'}</article>
       ${a?`<article class="card"><p class="eyebrow">PLANNING</p><p class="title">${fmt(a.date)} · ${a.time||'Tijd onbekend'}</p><p class="muted">Deze werkorder staat in de agenda van de toegewezen monteur.</p></article>`:''}
       <article class="card"><div class="row between"><div><p class="eyebrow">UITVOERING</p><p class="title">Terugmelding monteur</p></div></div>${workOrderExecutionRows(workOrder.execution||{})}</article>
       ${currentRole!=='technician' && workOrder.status==='ready'?`<button class="primary" id="scheduleWorkOrder">📅 Werkorder inplannen</button>`:''}
@@ -2560,19 +2615,16 @@ async function workOrderEditPage(workOrderId){
     const c=customer(workOrder.customer_id)||{};
     app.innerHTML=`<section class="screen"><form id="workOrderForm" class="form">
       <article class="card"><p class="eyebrow">WERKVOORBEREIDING</p><h2>${esc(c.name||'Klant')}</h2><p class="muted">De planner/eigenaar vult hier de technische werkorder in. Er staan geen prijzen in dit scherm.</p>${surveyField('title','Titel werkorder',workOrder.title||'Werkorder','Bijv. Plaatsing airco woonkamer')}${surveySelect('installationId','Gekoppelde installatie',workOrder.installation_id||'',[['','Nog geen installatie gekoppeld'],...systemsForCustomer(workOrder.customer_id).map(s=>[s.id,`${s.type==='warmtepomp'?'Warmtepomp':'Airco'} · ${s.brand} ${s.model}`])])}</article>
-      <article class="card"><p class="title">Technische opdracht</p>${surveySelect('jobType','Soort werk',d.jobType||'plaatsing',[['plaatsing','Plaatsing'],['onderhoud','Onderhoud'],['storing','Storing'],['controle','Controle / inspectie']])}${surveyField('workType','Werkzaamheden',d.workType,'Bijv. Nieuwe single split plaatsen')}${surveyField('systemDescription','Installatie / configuratie',d.systemDescription,'Bijv. single split · 1 binnenunit')}
-        <div class="form-grid-2">${surveyField('brand','Merk',d.brand,'Daikin')}${surveyField('model','Model',d.model,'Stylish')}</div>
-        <div class="form-grid-2">${surveyField('expectedLineLengthM','Verwachte leidinglengte (m)',d.expectedLineLengthM,'Bijv. 8','number')}${surveySelect('refrigerantType','Koudemiddel',d.refrigerantType||'unknown',SURVEY_REFRIGERANT_OPTIONS)}</div>
-        <div class="form-grid-2">${surveyField('factoryChargeKg','Fabrieksvulling (kg)',d.factoryChargeKg,'Bijv. 0.85','number')}${surveyField('includedLineM','Leiding inbegrepen tot (m)',d.includedLineM,'Bijv. 10','number')}</div>
-        ${surveyField('extraRefrigerantPerM','Extra koudemiddel per meter (g/m)',d.extraRefrigerantPerM,'Bijv. 20','number')}
-        ${surveyField('materials','Benodigde materialen / voorbereiding',d.materials,'Goot, beugels, dakdoorvoer…','textarea')}${surveyField('instructions','Werkinstructie monteur',d.instructions,'Wat moet de monteur precies uitvoeren?','textarea')}${surveyField('notes','Overige werkordernotitie',d.notes,'Aanvullende technische informatie','textarea')}
+      <article class="card"><p class="title">Technische opdracht</p>${surveySelect('jobType','Soort werk',d.jobType||'plaatsing',[['plaatsing','Plaatsing'],['onderhoud','Onderhoud'],['storing','Storing'],['controle','Controle / inspectie']])}${surveyField('workType','Werkzaamheden',d.workType,'Bijv. Nieuwe installatie plaatsen')}<div class="workorder-systems-list workorder-edit-systems">${d.systems?.length?d.systems.map(workOrderSystemEditCard).join(''):'<p class="muted">Geen compleet systeem uit de opname gevonden.</p>'}</div>${surveyField('materials','Benodigde materialen / voorbereiding',d.materials,'Goot, beugels, dakdoorvoer…','textarea')}${surveyField('instructions','Werkinstructie monteur',d.instructions,'Wat moet de monteur precies uitvoeren?','textarea')}${surveyField('notes','Overige werkordernotitie',d.notes,'Aanvullende technische informatie','textarea')}
       </article>
       <button class="primary" type="submit" id="workOrderSave">Werkorder opslaan</button>
     </form></section>`;
     const f=$('#workOrderForm');
     f.onsubmit=async e=>{
       e.preventDefault(); const submit=$('#workOrderSave'); submit.disabled=true; submit.textContent='Opslaan…';
-      const details={jobType:field(f,'jobType').value,workType:field(f,'workType').value.trim(),systemDescription:field(f,'systemDescription').value.trim(),brand:field(f,'brand').value.trim(),model:field(f,'model').value.trim(),expectedLineLengthM:field(f,'expectedLineLengthM').value,refrigerantType:field(f,'refrigerantType').value,factoryChargeKg:field(f,'factoryChargeKg').value,includedLineM:field(f,'includedLineM').value,extraRefrigerantPerM:field(f,'extraRefrigerantPerM').value,materials:field(f,'materials').value.trim(),instructions:field(f,'instructions').value.trim(),notes:field(f,'notes').value.trim()};
+      const systems=collectWorkOrderSystems(f,d.systems||[]);
+      const first=systems[0]||{};
+      const details={jobType:field(f,'jobType').value,workType:field(f,'workType').value.trim(),systems,systemDescription:first.systemType?`${detailValueLabel('systemType',first.systemType)} · ${first.brand||''} ${first.model||''}`.trim():'',brand:first.brand||'',model:first.model||'',expectedLineLengthM:first.expectedLineLengthM||'',refrigerantType:first.refrigerantType||'',factoryChargeKg:first.factoryChargeKg||'',includedLineM:first.includedLineM||'',extraRefrigerantPerM:first.extraRefrigerantPerM||'',materials:field(f,'materials').value.trim(),instructions:field(f,'instructions').value.trim(),notes:field(f,'notes').value.trim()};
       try{ await saveWorkOrder(workOrder.id,{quoteId:workOrder.quote_id,surveyAppointmentId:workOrder.survey_appointment_id,customerId:workOrder.customer_id,installationId:field(f,'installationId').value,title:field(f,'title').value.trim(),status:workOrder.status,details}); nav('workOrderDetail',{workOrderId:workOrder.id,back:route.back||'workOrders',appointmentId:route.appointmentId,date:route.date}); }
       catch(error){ alert(`Werkorder opslaan lukt niet.\n\n${error?.message||'Onbekende fout'}`); submit.disabled=false; submit.textContent='Werkorder opslaan'; }
     };

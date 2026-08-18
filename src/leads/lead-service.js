@@ -10,7 +10,7 @@ function context(roles=['owner','planner']){
 }
 
 async function authenticatedApi(path,body={}){
-  const {supabase}=context(['owner','planner']);
+  const {account,supabase}=context(['owner','planner']);
   const {data:{session}}=await supabase.auth.getSession();
   if(!session?.access_token) throw new Error('Log opnieuw in om deze koppeling te gebruiken.');
   const response=await fetch(path,{method:'POST',headers:{'content-type':'application/json',Authorization:`Bearer ${session.access_token}`,'x-optero-organization-id':account.organization.id},body:JSON.stringify(body)});
